@@ -10,14 +10,15 @@ Run commands from the repository root unless noted:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m pip install numpy matplotlib
+python -m pip install numpy matplotlib pytest
 cd rcwa
+python -m pytest -q
 python compare_rcwa_fresnel.py
 python main.py
 python -m compileall rcwa
 ```
 
-The comparison script checks homogeneous RCWA results against Fresnel/TMM calculations. `main.py` runs an angle sweep and opens Matplotlib windows. `compileall` provides a quick syntax/import-tree check. CuPy is optional and detected automatically; set `RCWA_GPU_REQUIRED=1` only when a missing GPU should be treated as an error.
+Pytest runs the automated regression suite. The comparison script checks homogeneous RCWA results against Fresnel/TMM calculations. `main.py` runs an angle sweep and opens Matplotlib windows. `compileall` provides a quick syntax/import-tree check. CuPy is optional and detected automatically; set `RCWA_GPU_REQUIRED=1` only when a missing GPU should be treated as an error.
 
 ## Coding Style & Naming Conventions
 
@@ -29,7 +30,7 @@ No automated test framework or coverage threshold is configured. For every numer
 
 ## Numerical Conventions
 
-Use SI units for documented examples and radians for angles passed to APIs. Lossy media follow `n_complex = n - i*k`, so loss gives a negative imaginary permittivity. Preserve harmonic ordering and array shapes when modifying matrix routines.
+Use SI units for documented examples and radians for angles passed to APIs. Lossy media follow `n_complex = n - i*k`, so loss gives a negative imaginary permittivity. The `nk_to_n` and `nk_to_eps` helpers accept either sign for `k` and normalize it to a passive medium. Preserve harmonic ordering and array shapes when modifying matrix routines.
 
 ## Commit & Pull Request Guidelines
 

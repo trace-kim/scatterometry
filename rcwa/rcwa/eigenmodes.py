@@ -6,14 +6,14 @@ from __future__ import annotations
 from typing import Tuple
 
 from .backend import get_array_module
-from .linalg import _solve, _diag, _conj_sqrt
+from .linalg import _solve, _diag, _outgoing_sqrt
 from .smatrix import SMatrix
 
 
 def _gap_eigenmodes(Kx, Ky) -> Tuple:
     """
     Implements lecture Step 5 (gap medium assumed homogeneous, normalized):
-      Kz = sqrt(I - Kx^2 - Ky^2)^*
+      Kz uses the outgoing/decaying square-root branch.
       Q  = [[Kx Ky, I - Kx^2],
             [Ky^2 - I, -Ky Kx]]
       W0 = [[I,0],[0,I]]
@@ -27,7 +27,7 @@ def _gap_eigenmodes(Kx, Ky) -> Tuple:
     I = xp.eye(Nh, dtype=xp.complex128)
     Z = xp.zeros((Nh, Nh), dtype=xp.complex128)
 
-    Kz = _conj_sqrt(1.0 - Kx**2 - Ky**2)  # gap assumed eps=mu=1
+    Kz = _outgoing_sqrt(1.0 - Kx**2 - Ky**2)  # gap assumed eps=mu=1
 
     KxD = _diag(Kx)
     KyD = _diag(Ky)

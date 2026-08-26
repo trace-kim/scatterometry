@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Dict
 
 from .backend import get_array_module
-from .linalg import _conj_sqrt
+from .linalg import _outgoing_sqrt
 from .models import RCWAProblem
 
 
@@ -23,8 +23,8 @@ def _wavevector_expansion(problem: RCWAProblem, mx, my) -> Dict:
 
     k0 = 2*xp.pi / inc.wavelength
 
-    # External media indices (normalized magnitude in k/k0 is sqrt(mu*eps))
-    n_inc = xp.sqrt(problem.region_ref.mu_r * problem.region_ref.eps_r)
+    # External-media index on the passive/outgoing branch.
+    n_inc = _outgoing_sqrt(problem.region_ref.mu_r * problem.region_ref.eps_r)
 
     kx_inc = n_inc * xp.sin(inc.theta) * xp.cos(inc.phi)
     ky_inc = n_inc * xp.sin(inc.theta) * xp.sin(inc.phi)
@@ -42,13 +42,13 @@ def _wavevector_expansion(problem: RCWAProblem, mx, my) -> Dict:
     Ky = ky.astype(xp.complex128)
 
     # longitudinal components in reflection/transmission regions:
-    # kz_ref = - sqrt(mu_ref*eps_ref - kx^2 - ky^2)^*
-    # kz_trn = + sqrt(mu_trn*eps_trn - kx^2 - ky^2)^*
+    # The positive-z root must propagate or decay toward transmission. Its
+    # negative is the corresponding outgoing root on the reflection side.
     mu1, eps1 = problem.region_ref.mu_r, problem.region_ref.eps_r
     mu2, eps2 = problem.region_trn.mu_r, problem.region_trn.eps_r
 
-    kz_ref = -_conj_sqrt(mu1*eps1 - Kx**2 - Ky**2)
-    kz_trn = +_conj_sqrt(mu2*eps2 - Kx**2 - Ky**2)
+    kz_ref = -_outgoing_sqrt(mu1*eps1 - Kx**2 - Ky**2)
+    kz_trn = _outgoing_sqrt(mu2*eps2 - Kx**2 - Ky**2)
 
     return dict(
         k0=float(k0),

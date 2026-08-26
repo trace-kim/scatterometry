@@ -146,17 +146,21 @@ class FresnelSolver:
 def nk_to_n(n: float, k: float) -> complex:
     """
     Convert (n, k) optical constants to complex refractive index.
-    Convention: n_complex = n - i*k (absorption gives positive k).
+
+    Passive media use ``n - 1j*kappa``. Both positive and negative extinction
+    values are accepted and normalized to that convention. Pass a complex
+    refractive index directly when modeling gain.
     """
-    return complex(n, -k)
+    return complex(n, -abs(k))
 
 
 def eps_to_n(eps_r: complex) -> complex:
     """
     Convert relative permittivity to complex refractive index.
-    n = sqrt(eps_r), choosing branch with Re(n) > 0.
+    Select the passive branch with ``Im(n) <= 0`` and, for real roots,
+    ``Re(n) >= 0``.
     """
-    n = np.sqrt(eps_r)
-    if np.real(n) < 0:
+    n = np.sqrt(complex(eps_r))
+    if np.imag(n) > 0 or (np.imag(n) == 0 and np.real(n) < 0):
         n = -n
-    return n
+    return complex(n)

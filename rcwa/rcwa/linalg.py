@@ -24,10 +24,17 @@ def _as_diag_vec(D):
     return xp.diag(D)
 
 
-def _conj_sqrt(z):
+def _outgoing_sqrt(z):
     """
-    Lecture uses sqrt(.)^* for Kz choices.
-    Implement as conj(sqrt(z)) elementwise.
+    Select the outgoing/decaying square-root branch elementwise.
+
+    Fields propagate as ``exp(-1j * kz * z)`` in this implementation, so a
+    forward passive or evanescent wave must have ``Im(kz) <= 0``. For a real
+    propagating root, choose ``Re(kz) >= 0``.
     """
     xp = get_array_module()
-    return xp.conj(xp.sqrt(z.astype(xp.complex128)))
+    root = xp.sqrt(xp.asarray(z, dtype=xp.complex128))
+    flip = (xp.imag(root) > 0) | (
+        (xp.imag(root) == 0) & (xp.real(root) < 0)
+    )
+    return xp.where(flip, -root, root)
