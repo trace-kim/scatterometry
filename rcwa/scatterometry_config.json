@@ -10,6 +10,7 @@
     "background_iterations": 5,
     "background_clip_sigma": 3.0,
     "signal_metric": "integral",
+    "projection_strip_padding": 5,
     "zero_order_x": null,
     "normalization": "sum",
     "csv_output": null,

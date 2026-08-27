@@ -42,6 +42,7 @@ class AnalysisConfig:
     background_iterations: int
     background_clip_sigma: float
     signal_metric: str
+    projection_strip_padding: int
     zero_order_x: float | None
     normalization: str
     csv_output: Path | None
@@ -86,6 +87,7 @@ def load_config(path: str | Path = CONFIG_PATH) -> AnalysisConfig:
         background_iterations=int(values.get("background_iterations", 5)),
         background_clip_sigma=float(values.get("background_clip_sigma", 3.0)),
         signal_metric=signal_metric,
+        projection_strip_padding=int(values.get("projection_strip_padding", 5)),
         zero_order_x=None if values.get("zero_order_x") is None else float(values["zero_order_x"]),
         normalization=normalization,
         csv_output=optional_path("csv_output"),
@@ -382,6 +384,45 @@ def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) 
     return peaks
 
 
+def strip_projections(
+    image: np.ndarray,
+    background: np.ndarray,
+    spots: list[Spot],
+    padding: int = 5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Calculate x/y projections through merged, detection-derived strips.
+
+    Horizontal strips use the detected blobs' padded y extents for the x
+    projection. Vertical strips use their padded x extents for the y
+    projection. Raw and background maps are summed independently before
+    subtraction, and only the resulting 1D residual is clipped to zero.
+
+    Returns ``raw_x, corrected_x, raw_y, corrected_y, y_mask, x_mask``.
+    """
+    image = np.asarray(image, dtype=float)
+    background = np.asarray(background, dtype=float)
+    if image.shape != background.shape or image.ndim != 2:
+        raise ValueError("image and background must be 2D arrays with matching shapes")
+    if padding < 0:
+        raise ValueError("projection_strip_padding must be nonnegative")
+
+    height, width = image.shape
+    y_mask = np.zeros(height, dtype=bool)
+    x_mask = np.zeros(width, dtype=bool)
+    for spot in spots:
+        x0, y0, x1, y1 = spot.bbox
+        y_mask[max(0, y0 - padding) : min(height, y1 + padding)] = True
+        x_mask[max(0, x0 - padding) : min(width, x1 + padding)] = True
+
+    raw_x = np.nansum(image[y_mask, :], axis=0)
+    background_x = np.nansum(background[y_mask, :], axis=0)
+    raw_y = np.nansum(image[:, x_mask], axis=1)
+    background_y = np.nansum(background[:, x_mask], axis=1)
+    corrected_x = np.maximum(raw_x - background_x, 0.0)
+    corrected_y = np.maximum(raw_y - background_y, 0.0)
+    return raw_x, corrected_x, raw_y, corrected_y, y_mask, x_mask
+
+
 def diagnostic_figure(
     image: np.ndarray,
     mask: np.ndarray,
@@ -389,6 +430,7 @@ def diagnostic_figure(
     spots: list[Spot],
     orders: np.ndarray,
     signal: np.ndarray,
+    projection_strip_padding: int = 5,
 ) -> plt.Figure:
     """Show background processing, detections, projections, and final signal."""
     fig, axes = plt.subplots(3, 3, figsize=(17, 13), constrained_layout=True)
@@ -419,8 +461,19 @@ def diagnostic_figure(
         axes[1, 2].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
     axes[1, 2].set_title(f"Detections on corrected image ({len(spots)} spots)")
 
-    raw_x_projection = image.sum(axis=0)
-    corrected_x_projection = corrected.sum(axis=0)
+    (
+        raw_x_projection,
+        corrected_x_projection,
+        raw_y_projection,
+        corrected_y_projection,
+        y_strip_mask,
+        x_strip_mask,
+    ) = strip_projections(image, background, spots, projection_strip_padding)
+    for y in np.flatnonzero(np.diff(np.r_[False, y_strip_mask, False])):
+        axes[1, 2].axhline(y - 0.5, color="tab:orange", ls="--", lw=0.7, alpha=0.8)
+    for x in np.flatnonzero(np.diff(np.r_[False, x_strip_mask, False])):
+        axes[1, 2].axvline(x - 0.5, color="tab:blue", ls="--", lw=0.7, alpha=0.8)
+
     x_axis = axes[2, 0]
     x_axis.plot(raw_x_projection, color="tab:orange", lw=1, label="raw sum")
     x_axis.plot(corrected_x_projection, color="tab:blue", lw=1.2, label="background-subtracted sum")
@@ -443,12 +496,10 @@ def diagnostic_figure(
     for spot, order in zip(spots, orders):
         x_axis.axvline(spot.x, color="tab:red", alpha=0.25)
         x_axis.text(spot.x, projection_top * 0.94, str(order), ha="center", va="top")
-    x_axis.set(title="Raw and background-subtracted x projections", xlabel="x pixel", ylabel="summed intensity (shared scale)")
+    x_axis.set(title="X projection through horizontal blob strips", xlabel="x pixel", ylabel="summed intensity (shared scale)")
     x_axis.margins(y=0.14)
     x_axis.legend(loc="upper left", fontsize=8)
 
-    raw_y_projection = image.sum(axis=1)
-    corrected_y_projection = corrected.sum(axis=1)
     y_pixels = np.arange(image.shape[0])
     y_axis = axes[2, 1]
     y_axis.plot(raw_y_projection, y_pixels, color="tab:orange", lw=1, label="raw sum")
@@ -473,7 +524,7 @@ def diagnostic_figure(
         y_axis.axhline(spot.y, color="tab:red", alpha=0.2)
     y_axis.invert_yaxis()
     y_axis.set(
-        title="Raw and background-subtracted y projections",
+        title="Y projection through vertical blob strips",
         xlabel="summed intensity (shared scale)",
         ylabel="y pixel",
     )
@@ -530,7 +581,15 @@ def main() -> None:
     csv_path = config.csv_output or base.with_name(base.name + "_signal.csv")
     figure_path = config.figure_output or base.with_name(base.name + "_debug.png")
     save_csv(csv_path, spots, orders, signal)
-    fig = diagnostic_figure(image, mask, background, spots, orders, signal)
+    fig = diagnostic_figure(
+        image,
+        mask,
+        background,
+        spots,
+        orders,
+        signal,
+        projection_strip_padding=config.projection_strip_padding,
+    )
     fig.savefig(figure_path, dpi=160)
     print(
         f"Detected {len(spots)} spots; background range="
