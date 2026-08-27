@@ -5,6 +5,7 @@
     "min_area": 12,
     "max_area": null,
     "background_mode": "polynomial",
+    "background_fit_domain": "log10",
     "background_polynomial_degree": 2,
     "background_iterations": 5,
     "background_clip_sigma": 3.0,

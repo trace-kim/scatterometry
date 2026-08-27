@@ -37,6 +37,7 @@ class AnalysisConfig:
     min_area: int
     max_area: int | None
     background_mode: str
+    background_fit_domain: str
     background_polynomial_degree: int
     background_iterations: int
     background_clip_sigma: float
@@ -67,6 +68,9 @@ def load_config(path: str | Path = CONFIG_PATH) -> AnalysisConfig:
     background_mode = str(values.get("background_mode", "polynomial"))
     if background_mode not in {"polynomial", "uniform"}:
         raise ValueError("config background_mode must be 'polynomial' or 'uniform'")
+    background_fit_domain = str(values.get("background_fit_domain", "log10"))
+    if background_fit_domain not in {"linear", "log10"}:
+        raise ValueError("config background_fit_domain must be 'linear' or 'log10'")
     signal_metric = str(values.get("signal_metric", "integral"))
     if signal_metric not in {"integral", "peak"}:
         raise ValueError("config signal_metric must be 'integral' or 'peak'")
@@ -77,6 +81,7 @@ def load_config(path: str | Path = CONFIG_PATH) -> AnalysisConfig:
         min_area=int(values.get("min_area", 12)),
         max_area=None if values.get("max_area") is None else int(values["max_area"]),
         background_mode=background_mode,
+        background_fit_domain=background_fit_domain,
         background_polynomial_degree=int(values.get("background_polynomial_degree", 2)),
         background_iterations=int(values.get("background_iterations", 5)),
         background_clip_sigma=float(values.get("background_clip_sigma", 3.0)),
@@ -134,6 +139,7 @@ def _polynomial_terms(x: np.ndarray, y: np.ndarray, degree: int) -> np.ndarray:
 def estimate_background_map(
     image: np.ndarray,
     mode: str = "polynomial",
+    fit_domain: str = "linear",
     polynomial_degree: int = 2,
     iterations: int = 5,
     clip_sigma: float = 3.0,
@@ -143,6 +149,9 @@ def estimate_background_map(
     Polynomial fitting uses normalized image coordinates and iterative sigma
     clipping. Pixels above the smooth surface are excluded on each iteration,
     preventing bright diffraction blobs from pulling the fitted background up.
+    With ``fit_domain="log10"``, the robust surface is fitted after a safe
+    log10 conversion and transformed back to linear intensity afterward. This
+    handles multiplicative illumination shapes while preserving linear output.
     This model is intended for broad illumination/camera-background shapes, not
     background features as narrow as the diffraction spots themselves.
     """
@@ -154,13 +163,16 @@ def estimate_background_map(
         return np.full_like(image, level), initial_noise
     if mode != "polynomial":
         raise ValueError("background mode must be 'polynomial' or 'uniform'")
+    if fit_domain not in {"linear", "log10"}:
+        raise ValueError("background fit domain must be 'linear' or 'log10'")
     if polynomial_degree < 0 or polynomial_degree > 5:
         raise ValueError("background_polynomial_degree must be between 0 and 5")
 
     height, width = image.shape
     yy, xx = np.mgrid[-1.0:1.0:complex(height), -1.0:1.0:complex(width)]
     design = _polynomial_terms(xx.ravel(), yy.ravel(), polynomial_degree)
-    values = image.ravel()
+    fit_image = _log10_image(image) if fit_domain == "log10" else image
+    values = fit_image.ravel()
     valid = np.isfinite(values)
     model = np.full_like(values, level)
     noise = initial_noise
@@ -174,7 +186,13 @@ def estimate_background_map(
         # Reject both extreme defects and bright spots, while allowing a small
         # residual offset caused by the current fit.
         valid = np.isfinite(values) & (np.abs(residual - residual_level) <= clip_sigma * noise)
-    return model.reshape(image.shape), noise
+    background = model.reshape(image.shape)
+    if fit_domain == "log10":
+        background = np.power(10.0, background)
+    # Detection thresholds operate in linear camera intensity, so estimate the
+    # final noise after converting the fitted model back to that domain.
+    _, linear_noise = robust_background(image - background)
+    return background, linear_noise
 
 
 def _subtract_background(image: np.ndarray, background: np.ndarray) -> np.ndarray:
@@ -211,6 +229,7 @@ def detect_spots(
     min_area: int = 12,
     max_area: int | None = None,
     background_mode: str = "polynomial",
+    background_fit_domain: str = "linear",
     background_polynomial_degree: int = 2,
     background_iterations: int = 5,
     background_clip_sigma: float = 3.0,
@@ -231,6 +250,7 @@ def detect_spots(
     background, noise = estimate_background_map(
         image,
         mode=background_mode,
+        fit_domain=background_fit_domain,
         polynomial_degree=background_polynomial_degree,
         iterations=background_iterations,
         clip_sigma=background_clip_sigma,
@@ -493,6 +513,7 @@ def main() -> None:
         min_area=config.min_area,
         max_area=config.max_area,
         background_mode=config.background_mode,
+        background_fit_domain=config.background_fit_domain,
         background_polynomial_degree=config.background_polynomial_degree,
         background_iterations=config.background_iterations,
         background_clip_sigma=config.background_clip_sigma,
