@@ -130,9 +130,16 @@ def robust_background(image: np.ndarray) -> tuple[float, float]:
 
 
 def _polynomial_terms(x: np.ndarray, y: np.ndarray, degree: int) -> np.ndarray:
-    """Build terms x**i * y**j for all i+j <= degree."""
+    """Build a numerically stable 2D Legendre basis with total degree limit."""
+    x_terms = np.polynomial.legendre.legvander(x, degree)
+    y_terms = np.polynomial.legendre.legvander(y, degree)
     return np.column_stack(
-        [(x**i) * (y**j) for total in range(degree + 1) for i in range(total + 1) for j in [total - i]]
+        [
+            x_terms[:, i] * y_terms[:, j]
+            for total in range(degree + 1)
+            for i in range(total + 1)
+            for j in [total - i]
+        ]
     )
 
 
@@ -165,8 +172,8 @@ def estimate_background_map(
         raise ValueError("background mode must be 'polynomial' or 'uniform'")
     if fit_domain not in {"linear", "log10"}:
         raise ValueError("background fit domain must be 'linear' or 'log10'")
-    if polynomial_degree < 0 or polynomial_degree > 5:
-        raise ValueError("background_polynomial_degree must be between 0 and 5")
+    if polynomial_degree < 0 or polynomial_degree > 12:
+        raise ValueError("background_polynomial_degree must be between 0 and 12")
 
     height, width = image.shape
     yy, xx = np.mgrid[-1.0:1.0:complex(height), -1.0:1.0:complex(width)]
