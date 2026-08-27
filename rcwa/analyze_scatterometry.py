@@ -304,8 +304,36 @@ def _log10_image(image: np.ndarray) -> np.ndarray:
     return np.log10(clipped)
 
 
-def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) -> list[tuple[int, float]]:
-    """Find one local projection maximum in each merged blob interval."""
+@dataclass(frozen=True)
+class ProjectionPeak:
+    """A 1D peak with SciPy-style prominence geometry."""
+
+    index: int
+    height: float
+    prominence: float
+    left_base: int
+    right_base: int
+    contour_height: float
+
+
+def _peak_prominence(projection: np.ndarray, peak: int) -> ProjectionPeak:
+    """Calculate prominence using the same contour definition as find_peaks."""
+    height = float(projection[peak])
+    left_limit = peak
+    while left_limit > 0 and projection[left_limit - 1] <= height:
+        left_limit -= 1
+    right_limit = peak
+    last = len(projection) - 1
+    while right_limit < last and projection[right_limit + 1] <= height:
+        right_limit += 1
+    left_base = left_limit + int(np.argmin(projection[left_limit : peak + 1]))
+    right_base = peak + int(np.argmin(projection[peak : right_limit + 1]))
+    contour = max(float(projection[left_base]), float(projection[right_base]))
+    return ProjectionPeak(peak, height, height - contour, left_base, right_base, contour)
+
+
+def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) -> list[ProjectionPeak]:
+    """Find one local peak and its prominence in each merged blob interval."""
     if not intervals:
         return []
     merged: list[list[int]] = []
@@ -314,10 +342,10 @@ def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) 
             merged[-1][1] = max(merged[-1][1], stop)
         else:
             merged.append([start, stop])
-    peaks = []
+    peaks: list[ProjectionPeak] = []
     for start, stop in merged:
         index = start + int(np.argmax(projection[start:stop]))
-        peaks.append((index, float(projection[index])))
+        peaks.append(_peak_prominence(projection, index))
     return peaks
 
 
@@ -360,49 +388,64 @@ def diagnostic_figure(
 
     raw_x_projection = image.sum(axis=0)
     corrected_x_projection = corrected_signed.sum(axis=0)
-    axes[2, 0].plot(raw_x_projection, color="0.55", lw=1, label="raw sum")
-    x_corrected_axis = axes[2, 0].twinx()
-    x_corrected_axis.plot(corrected_x_projection, color="tab:blue", lw=1.2, label="background-subtracted sum")
-    x_peaks = _projection_peaks(corrected_x_projection, [(spot.bbox[0], spot.bbox[2]) for spot in spots])
-    for x_peak, height in x_peaks:
-        x_corrected_axis.plot(x_peak, height, "o", color="tab:red", ms=5)
-        x_corrected_axis.annotate(
-            f"{height:.3g}", (x_peak, height), xytext=(0, 7), textcoords="offset points",
-            ha="center", color="tab:red", fontsize=8,
-        )
-    projection_top = max(float(np.max(corrected_x_projection)), 1.0)
+    x_axis = axes[2, 0]
+    x_axis.plot(raw_x_projection, color="tab:orange", lw=1, label="raw sum")
+    x_axis.plot(corrected_x_projection, color="tab:blue", lw=1.2, label="background-subtracted sum")
+    x_intervals = [(spot.bbox[0], spot.bbox[2]) for spot in spots]
+    for projection, color, label, text_offset in [
+        (raw_x_projection, "tab:orange", "raw", 8),
+        (corrected_x_projection, "tab:blue", "sub", -13),
+    ]:
+        for peak in _projection_peaks(projection, x_intervals):
+            x_axis.plot(peak.index, peak.height, "o", color=color, ms=4)
+            # Horizontal contour and vertical prominence lines.
+            x_axis.hlines(peak.contour_height, peak.left_base, peak.right_base, color=color, ls="--", lw=0.9)
+            x_axis.vlines(peak.index, peak.contour_height, peak.height, color=color, ls=":", lw=1.1)
+            x_axis.annotate(
+                f"{label} P={peak.prominence:.3g}", (peak.index, peak.height),
+                xytext=(0, text_offset), textcoords="offset points", ha="center",
+                va="bottom" if text_offset > 0 else "top", color=color, fontsize=7,
+            )
+    projection_top = max(float(np.max(raw_x_projection)), 1.0)
     for spot, order in zip(spots, orders):
-        axes[2, 0].axvline(spot.x, color="tab:red", alpha=0.45)
-        x_corrected_axis.text(spot.x, projection_top * 0.92, str(order), ha="center", va="top")
-    axes[2, 0].set(title="Raw and background-subtracted x projections", xlabel="x pixel", ylabel="raw summed intensity")
-    x_corrected_axis.set_ylabel("background-subtracted summed intensity", color="tab:blue")
-    lines = axes[2, 0].lines[:1] + x_corrected_axis.lines[:1]
-    axes[2, 0].legend(lines, [line.get_label() for line in lines], loc="upper left", fontsize=8)
+        x_axis.axvline(spot.x, color="tab:red", alpha=0.25)
+        x_axis.text(spot.x, projection_top * 0.94, str(order), ha="center", va="top")
+    x_axis.set(title="Raw and background-subtracted x projections", xlabel="x pixel", ylabel="summed intensity (shared scale)")
+    x_axis.margins(y=0.14)
+    x_axis.legend(loc="upper left", fontsize=8)
 
     raw_y_projection = image.sum(axis=1)
     corrected_y_projection = corrected_signed.sum(axis=1)
     y_pixels = np.arange(image.shape[0])
-    axes[2, 1].plot(raw_y_projection, y_pixels, color="0.55", lw=1, label="raw sum")
-    y_corrected_axis = axes[2, 1].twiny()
-    y_corrected_axis.plot(corrected_y_projection, y_pixels, color="tab:blue", lw=1.2, label="background-subtracted sum")
-    y_peaks = _projection_peaks(corrected_y_projection, [(spot.bbox[1], spot.bbox[3]) for spot in spots])
-    for y_peak, height in y_peaks:
-        y_corrected_axis.plot(height, y_peak, "o", color="tab:red", ms=5)
-        y_corrected_axis.annotate(
-            f"{height:.3g}", (height, y_peak), xytext=(7, 0), textcoords="offset points",
-            va="center", color="tab:red", fontsize=8,
-        )
+    y_axis = axes[2, 1]
+    y_axis.plot(raw_y_projection, y_pixels, color="tab:orange", lw=1, label="raw sum")
+    y_axis.plot(corrected_y_projection, y_pixels, color="tab:blue", lw=1.2, label="background-subtracted sum")
+    y_intervals = [(spot.bbox[1], spot.bbox[3]) for spot in spots]
+    for projection, color, label, text_offset in [
+        (raw_y_projection, "tab:orange", "raw", -33),
+        (corrected_y_projection, "tab:blue", "sub", 7),
+    ]:
+        for peak in _projection_peaks(projection, y_intervals):
+            y_axis.plot(peak.height, peak.index, "o", color=color, ms=4)
+            # The projection is rotated here: contours are vertical and the
+            # prominence height extends horizontally at the peak position.
+            y_axis.vlines(peak.contour_height, peak.left_base, peak.right_base, color=color, ls="--", lw=0.9)
+            y_axis.hlines(peak.index, peak.contour_height, peak.height, color=color, ls=":", lw=1.1)
+            y_axis.annotate(
+                f"{label} P={peak.prominence:.3g}", (peak.height, peak.index),
+                xytext=(text_offset, 0), textcoords="offset points",
+                ha="right" if text_offset < 0 else "left", va="center", color=color, fontsize=7,
+            )
     for spot, order in zip(spots, orders):
-        axes[2, 1].axhline(spot.y, color="tab:red", alpha=0.35)
-    axes[2, 1].invert_yaxis()
-    axes[2, 1].set(
+        y_axis.axhline(spot.y, color="tab:red", alpha=0.2)
+    y_axis.invert_yaxis()
+    y_axis.set(
         title="Raw and background-subtracted y projections",
-        xlabel="raw summed intensity",
+        xlabel="summed intensity (shared scale)",
         ylabel="y pixel",
     )
-    y_corrected_axis.set_xlabel("background-subtracted summed intensity", color="tab:blue")
-    lines = axes[2, 1].lines[:1] + y_corrected_axis.lines[:1]
-    axes[2, 1].legend(lines, [line.get_label() for line in lines], loc="lower right", fontsize=8)
+    y_axis.margins(x=0.16)
+    y_axis.legend(loc="lower right", fontsize=8)
 
     markerline, stemlines, baseline = axes[2, 2].stem(orders, signal)
     plt.setp(markerline, markersize=6)
