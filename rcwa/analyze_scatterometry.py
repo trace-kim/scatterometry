@@ -35,6 +35,11 @@ class AnalysisConfig:
     threshold_sigma: float
     min_area: int
     max_area: int | None
+    background_mode: str
+    background_polynomial_degree: int
+    background_iterations: int
+    background_clip_sigma: float
+    signal_metric: str
     zero_order_x: float | None
     normalization: str
     csv_output: Path | None
@@ -58,12 +63,23 @@ def load_config(path: str | Path = CONFIG_PATH) -> AnalysisConfig:
     normalization = str(values.get("normalization", "sum"))
     if normalization not in {"sum", "max", "none"}:
         raise ValueError("config normalization must be 'sum', 'max', or 'none'")
+    background_mode = str(values.get("background_mode", "polynomial"))
+    if background_mode not in {"polynomial", "uniform"}:
+        raise ValueError("config background_mode must be 'polynomial' or 'uniform'")
+    signal_metric = str(values.get("signal_metric", "integral"))
+    if signal_metric not in {"integral", "peak"}:
+        raise ValueError("config signal_metric must be 'integral' or 'peak'")
     return AnalysisConfig(
         image_path=optional_path("image_path"),
         use_demo_image=bool(values.get("use_demo_image", False)),
         threshold_sigma=float(values.get("threshold_sigma", 6.0)),
         min_area=int(values.get("min_area", 12)),
         max_area=None if values.get("max_area") is None else int(values["max_area"]),
+        background_mode=background_mode,
+        background_polynomial_degree=int(values.get("background_polynomial_degree", 2)),
+        background_iterations=int(values.get("background_iterations", 5)),
+        background_clip_sigma=float(values.get("background_clip_sigma", 3.0)),
+        signal_metric=signal_metric,
         zero_order_x=None if values.get("zero_order_x") is None else float(values["zero_order_x"]),
         normalization=normalization,
         csv_output=optional_path("csv_output"),
@@ -107,6 +123,59 @@ def robust_background(image: np.ndarray) -> tuple[float, float]:
     return level, max(sigma, np.finfo(float).eps)
 
 
+def _polynomial_terms(x: np.ndarray, y: np.ndarray, degree: int) -> np.ndarray:
+    """Build terms x**i * y**j for all i+j <= degree."""
+    return np.column_stack(
+        [(x**i) * (y**j) for total in range(degree + 1) for i in range(total + 1) for j in [total - i]]
+    )
+
+
+def estimate_background_map(
+    image: np.ndarray,
+    mode: str = "polynomial",
+    polynomial_degree: int = 2,
+    iterations: int = 5,
+    clip_sigma: float = 3.0,
+) -> tuple[np.ndarray, float]:
+    """Estimate a uniform or smoothly varying background and residual noise.
+
+    Polynomial fitting uses normalized image coordinates and iterative sigma
+    clipping. Pixels above the smooth surface are excluded on each iteration,
+    preventing bright diffraction blobs from pulling the fitted background up.
+    This model is intended for broad illumination/camera-background shapes, not
+    background features as narrow as the diffraction spots themselves.
+    """
+    image = np.asarray(image, dtype=float)
+    if image.ndim != 2:
+        raise ValueError("estimate_background_map expects a 2D image")
+    level, initial_noise = robust_background(image)
+    if mode == "uniform":
+        return np.full_like(image, level), initial_noise
+    if mode != "polynomial":
+        raise ValueError("background mode must be 'polynomial' or 'uniform'")
+    if polynomial_degree < 0 or polynomial_degree > 5:
+        raise ValueError("background_polynomial_degree must be between 0 and 5")
+
+    height, width = image.shape
+    yy, xx = np.mgrid[-1.0:1.0:complex(height), -1.0:1.0:complex(width)]
+    design = _polynomial_terms(xx.ravel(), yy.ravel(), polynomial_degree)
+    values = image.ravel()
+    valid = np.isfinite(values)
+    model = np.full_like(values, level)
+    noise = initial_noise
+    for _ in range(max(1, iterations)):
+        if valid.sum() < design.shape[1]:
+            raise ValueError("Too few background pixels for polynomial fit")
+        coefficients, *_ = np.linalg.lstsq(design[valid], values[valid], rcond=None)
+        model = design @ coefficients
+        residual = values - model
+        residual_level, noise = robust_background(residual[valid])
+        # Reject both extreme defects and bright spots, while allowing a small
+        # residual offset caused by the current fit.
+        valid = np.isfinite(values) & (np.abs(residual - residual_level) <= clip_sigma * noise)
+    return model.reshape(image.shape), noise
+
+
 def _components(mask: np.ndarray) -> list[np.ndarray]:
     """Find 8-connected components without requiring SciPy."""
     height, width = mask.shape
@@ -135,7 +204,12 @@ def detect_spots(
     threshold_sigma: float = 6.0,
     min_area: int = 12,
     max_area: int | None = None,
-) -> tuple[list[Spot], np.ndarray, float]:
+    background_mode: str = "polynomial",
+    background_polynomial_degree: int = 2,
+    background_iterations: int = 5,
+    background_clip_sigma: float = 3.0,
+    signal_metric: str = "integral",
+) -> tuple[list[Spot], np.ndarray, np.ndarray]:
     """Detect bright components and integrate their excess above background.
 
     The threshold is ``median + threshold_sigma * MAD_sigma``.  Signal is the
@@ -146,7 +220,15 @@ def detect_spots(
     image = np.asarray(image, dtype=float)
     if image.ndim != 2:
         raise ValueError("detect_spots expects a 2D grayscale image")
-    background, noise = robust_background(image)
+    if signal_metric not in {"integral", "peak"}:
+        raise ValueError("signal_metric must be 'integral' or 'peak'")
+    background, noise = estimate_background_map(
+        image,
+        mode=background_mode,
+        polynomial_degree=background_polynomial_degree,
+        iterations=background_iterations,
+        clip_sigma=background_clip_sigma,
+    )
     corrected = np.nan_to_num(image - background, nan=0.0)
     threshold = threshold_sigma * noise
     mask = corrected > threshold
@@ -157,8 +239,10 @@ def detect_spots(
             continue
         ys, xs = pixels[:, 0], pixels[:, 1]
         weights = np.maximum(corrected[ys, xs], 0.0)
-        signal = float(weights.sum())
-        if signal <= 0.0:
+        integral = float(weights.sum())
+        peak = float(np.max(corrected[ys, xs]))
+        signal = integral if signal_metric == "integral" else peak
+        if integral <= 0.0:
             continue
         spots.append(
             Spot(
@@ -166,7 +250,7 @@ def detect_spots(
                 y=float(np.sum(ys * weights) / signal),
                 signal=signal,
                 area=area,
-                peak=float(np.max(corrected[ys, xs])),
+                peak=peak,
                 bbox=(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1),
             )
         )
@@ -206,55 +290,69 @@ def save_csv(path: str | Path, spots: list[Spot], orders: np.ndarray, signal: np
 def diagnostic_figure(
     image: np.ndarray,
     mask: np.ndarray,
-    background: float,
+    background: np.ndarray,
     spots: list[Spot],
     orders: np.ndarray,
     signal: np.ndarray,
 ) -> plt.Figure:
-    """Show linear/log images, detections, x/y projections, and final signal."""
-    fig, axes = plt.subplots(2, 3, figsize=(17, 9), constrained_layout=True)
+    """Show background processing, detections, projections, and final signal."""
+    fig, axes = plt.subplots(3, 3, figsize=(17, 13), constrained_layout=True)
     axes[0, 0].imshow(image, cmap="gray", origin="upper")
     axes[0, 0].set_title("Input image")
 
     finite_min = float(np.nanmin(image))
-    log_image = np.log1p(np.maximum(image - finite_min, 0.0))
+    positive_image = np.maximum(image - finite_min, 0.0)
+    positive_scale = max(float(np.nanmax(positive_image)), 1.0)
+    log_image = np.log10(1.0 + positive_image / positive_scale)
     axes[0, 1].imshow(log_image, cmap="gray", origin="upper")
-    axes[0, 1].set_title("Input image (log scale)")
+    axes[0, 1].set_title("Input image (log10 scale)")
 
-    axes[0, 2].imshow(image, cmap="gray", origin="upper")
-    axes[0, 2].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
+    background_view = axes[0, 2].imshow(background, cmap="viridis", origin="upper")
+    axes[0, 2].set_title("Estimated background map")
+    fig.colorbar(background_view, ax=axes[0, 2], shrink=0.8)
+
+    corrected_signed = image - background
+    corrected_view = axes[1, 0].imshow(corrected_signed, cmap="gray", origin="upper")
+    axes[1, 0].set_title("Background-subtracted image")
+    fig.colorbar(corrected_view, ax=axes[1, 0], shrink=0.8)
+
+    axes[1, 1].imshow(mask, cmap="gray", origin="upper")
+    axes[1, 1].set_title("Detection threshold mask")
+
+    axes[1, 2].imshow(corrected_signed, cmap="gray", origin="upper")
+    axes[1, 2].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
     for spot, order in zip(spots, orders):
         x0, y0, x1, y1 = spot.bbox
-        axes[0, 2].add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, edgecolor="lime"))
-        axes[0, 2].plot(spot.x, spot.y, "r+", ms=8)
-        axes[0, 2].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
-    axes[0, 2].set_title(f"Threshold mask and detections ({len(spots)} spots)")
+        axes[1, 2].add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, edgecolor="lime"))
+        axes[1, 2].plot(spot.x, spot.y, "r+", ms=8)
+        axes[1, 2].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
+    axes[1, 2].set_title(f"Detections on corrected image ({len(spots)} spots)")
 
     corrected = np.maximum(image - background, 0.0)
     x_projection = corrected.sum(axis=0)
-    axes[1, 0].plot(x_projection, color="black", lw=1)
+    axes[2, 0].plot(x_projection, color="black", lw=1)
     for spot, order in zip(spots, orders):
-        axes[1, 0].axvline(spot.x, color="tab:red", alpha=0.45)
-        axes[1, 0].text(spot.x, x_projection.max() * 0.93, str(order), ha="center", va="top")
-    axes[1, 0].set(title="Background-corrected x projection", xlabel="x pixel", ylabel="summed intensity")
+        axes[2, 0].axvline(spot.x, color="tab:red", alpha=0.45)
+        axes[2, 0].text(spot.x, x_projection.max() * 0.93, str(order), ha="center", va="top")
+    axes[2, 0].set(title="Background-corrected x projection", xlabel="x pixel", ylabel="summed intensity")
 
     y_projection = corrected.sum(axis=1)
-    axes[1, 1].plot(y_projection, np.arange(image.shape[0]), color="black", lw=1)
+    axes[2, 1].plot(y_projection, np.arange(image.shape[0]), color="black", lw=1)
     for spot, order in zip(spots, orders):
-        axes[1, 1].axhline(spot.y, color="tab:red", alpha=0.35)
-    axes[1, 1].invert_yaxis()
-    axes[1, 1].set(
+        axes[2, 1].axhline(spot.y, color="tab:red", alpha=0.35)
+    axes[2, 1].invert_yaxis()
+    axes[2, 1].set(
         title="Background-corrected y projection",
         xlabel="summed intensity",
         ylabel="y pixel",
     )
 
-    markerline, stemlines, baseline = axes[1, 2].stem(orders, signal)
+    markerline, stemlines, baseline = axes[2, 2].stem(orders, signal)
     plt.setp(markerline, markersize=6)
     plt.setp(stemlines, linewidth=2)
     plt.setp(baseline, color="0.5")
-    axes[1, 2].set(title="Extracted diffraction signal", xlabel="assigned order m", ylabel="normalized intensity")
-    axes[1, 2].grid(alpha=0.25)
+    axes[2, 2].set(title="Extracted diffraction signal", xlabel="assigned order m", ylabel="normalized intensity")
+    axes[2, 2].grid(alpha=0.25)
     return fig
 
 
@@ -288,6 +386,11 @@ def main() -> None:
         threshold_sigma=config.threshold_sigma,
         min_area=config.min_area,
         max_area=config.max_area,
+        background_mode=config.background_mode,
+        background_polynomial_degree=config.background_polynomial_degree,
+        background_iterations=config.background_iterations,
+        background_clip_sigma=config.background_clip_sigma,
+        signal_metric=config.signal_metric,
     )
     orders, signal = spots_to_signal(spots, config.zero_order_x, config.normalization)
     csv_path = config.csv_output or base.with_name(base.name + "_signal.csv")
@@ -295,7 +398,10 @@ def main() -> None:
     save_csv(csv_path, spots, orders, signal)
     fig = diagnostic_figure(image, mask, background, spots, orders, signal)
     fig.savefig(figure_path, dpi=160)
-    print(f"Detected {len(spots)} spots; background={background:.6g}")
+    print(
+        f"Detected {len(spots)} spots; background range="
+        f"[{background.min():.6g}, {background.max():.6g}]"
+    )
     print(f"Saved signal: {csv_path}")
     print(f"Saved diagnostics: {figure_path}")
     if config.show_figure:
