@@ -287,6 +287,40 @@ def save_csv(path: str | Path, spots: list[Spot], orders: np.ndarray, signal: np
             writer.writerow([order, value, spot.x, spot.y, spot.signal, spot.area, spot.peak])
 
 
+def _log10_image(image: np.ndarray) -> np.ndarray:
+    """Clip negatives, replace zeros with the minimum positive, then log10."""
+    clipped = np.maximum(np.asarray(image, dtype=float), 0.0)
+    positive = clipped[np.isfinite(clipped) & (clipped > 0.0)]
+    if positive.size == 0:
+        return np.zeros_like(image, dtype=float)
+    minimum_positive = float(positive.min())
+    clipped = np.nan_to_num(
+        clipped,
+        nan=0.0,
+        posinf=float(positive.max()),
+        neginf=0.0,
+    )
+    clipped[clipped == 0.0] = minimum_positive
+    return np.log10(clipped)
+
+
+def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) -> list[tuple[int, float]]:
+    """Find one local projection maximum in each merged blob interval."""
+    if not intervals:
+        return []
+    merged: list[list[int]] = []
+    for start, stop in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], stop)
+        else:
+            merged.append([start, stop])
+    peaks = []
+    for start, stop in merged:
+        index = start + int(np.argmax(projection[start:stop]))
+        peaks.append((index, float(projection[index])))
+    return peaks
+
+
 def diagnostic_figure(
     image: np.ndarray,
     mask: np.ndarray,
@@ -300,11 +334,7 @@ def diagnostic_figure(
     axes[0, 0].imshow(image, cmap="gray", origin="upper")
     axes[0, 0].set_title("Input image")
 
-    finite_min = float(np.nanmin(image))
-    positive_image = np.maximum(image - finite_min, 0.0)
-    positive_scale = max(float(np.nanmax(positive_image)), 1.0)
-    log_image = np.log10(1.0 + positive_image / positive_scale)
-    axes[0, 1].imshow(log_image, cmap="gray", origin="upper")
+    axes[0, 1].imshow(_log10_image(image), cmap="gray", origin="upper")
     axes[0, 1].set_title("Input image (log10 scale)")
 
     background_view = axes[0, 2].imshow(background, cmap="viridis", origin="upper")
@@ -316,8 +346,8 @@ def diagnostic_figure(
     axes[1, 0].set_title("Background-subtracted image")
     fig.colorbar(corrected_view, ax=axes[1, 0], shrink=0.8)
 
-    axes[1, 1].imshow(mask, cmap="gray", origin="upper")
-    axes[1, 1].set_title("Detection threshold mask")
+    axes[1, 1].imshow(_log10_image(corrected_signed), cmap="gray", origin="upper")
+    axes[1, 1].set_title("Background-subtracted image (log10 scale)")
 
     axes[1, 2].imshow(corrected_signed, cmap="gray", origin="upper")
     axes[1, 2].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
@@ -328,24 +358,51 @@ def diagnostic_figure(
         axes[1, 2].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
     axes[1, 2].set_title(f"Detections on corrected image ({len(spots)} spots)")
 
-    corrected = np.maximum(image - background, 0.0)
-    x_projection = corrected.sum(axis=0)
-    axes[2, 0].plot(x_projection, color="black", lw=1)
+    raw_x_projection = image.sum(axis=0)
+    corrected_x_projection = corrected_signed.sum(axis=0)
+    axes[2, 0].plot(raw_x_projection, color="0.55", lw=1, label="raw sum")
+    x_corrected_axis = axes[2, 0].twinx()
+    x_corrected_axis.plot(corrected_x_projection, color="tab:blue", lw=1.2, label="background-subtracted sum")
+    x_peaks = _projection_peaks(corrected_x_projection, [(spot.bbox[0], spot.bbox[2]) for spot in spots])
+    for x_peak, height in x_peaks:
+        x_corrected_axis.plot(x_peak, height, "o", color="tab:red", ms=5)
+        x_corrected_axis.annotate(
+            f"{height:.3g}", (x_peak, height), xytext=(0, 7), textcoords="offset points",
+            ha="center", color="tab:red", fontsize=8,
+        )
+    projection_top = max(float(np.max(corrected_x_projection)), 1.0)
     for spot, order in zip(spots, orders):
         axes[2, 0].axvline(spot.x, color="tab:red", alpha=0.45)
-        axes[2, 0].text(spot.x, x_projection.max() * 0.93, str(order), ha="center", va="top")
-    axes[2, 0].set(title="Background-corrected x projection", xlabel="x pixel", ylabel="summed intensity")
+        x_corrected_axis.text(spot.x, projection_top * 0.92, str(order), ha="center", va="top")
+    axes[2, 0].set(title="Raw and background-subtracted x projections", xlabel="x pixel", ylabel="raw summed intensity")
+    x_corrected_axis.set_ylabel("background-subtracted summed intensity", color="tab:blue")
+    lines = axes[2, 0].lines[:1] + x_corrected_axis.lines[:1]
+    axes[2, 0].legend(lines, [line.get_label() for line in lines], loc="upper left", fontsize=8)
 
-    y_projection = corrected.sum(axis=1)
-    axes[2, 1].plot(y_projection, np.arange(image.shape[0]), color="black", lw=1)
+    raw_y_projection = image.sum(axis=1)
+    corrected_y_projection = corrected_signed.sum(axis=1)
+    y_pixels = np.arange(image.shape[0])
+    axes[2, 1].plot(raw_y_projection, y_pixels, color="0.55", lw=1, label="raw sum")
+    y_corrected_axis = axes[2, 1].twiny()
+    y_corrected_axis.plot(corrected_y_projection, y_pixels, color="tab:blue", lw=1.2, label="background-subtracted sum")
+    y_peaks = _projection_peaks(corrected_y_projection, [(spot.bbox[1], spot.bbox[3]) for spot in spots])
+    for y_peak, height in y_peaks:
+        y_corrected_axis.plot(height, y_peak, "o", color="tab:red", ms=5)
+        y_corrected_axis.annotate(
+            f"{height:.3g}", (height, y_peak), xytext=(7, 0), textcoords="offset points",
+            va="center", color="tab:red", fontsize=8,
+        )
     for spot, order in zip(spots, orders):
         axes[2, 1].axhline(spot.y, color="tab:red", alpha=0.35)
     axes[2, 1].invert_yaxis()
     axes[2, 1].set(
-        title="Background-corrected y projection",
-        xlabel="summed intensity",
+        title="Raw and background-subtracted y projections",
+        xlabel="raw summed intensity",
         ylabel="y pixel",
     )
+    y_corrected_axis.set_xlabel("background-subtracted summed intensity", color="tab:blue")
+    lines = axes[2, 1].lines[:1] + y_corrected_axis.lines[:1]
+    axes[2, 1].legend(lines, [line.get_label() for line in lines], loc="lower right", fontsize=8)
 
     markerline, stemlines, baseline = axes[2, 2].stem(orders, signal)
     plt.setp(markerline, markersize=6)
