@@ -1,8 +1,8 @@
 """Detect diffraction spots in a scatterometry image and extract a 1D signal.
 
-The script deliberately uses only NumPy and Matplotlib.  It is intended as a
-transparent starting point: inspect the diagnostic figure, then tune the
-threshold and area limits for a particular camera and exposure.
+The script uses NumPy, Matplotlib, and SciPy. It is intended as a transparent
+starting point: inspect the diagnostic figure, then tune the threshold and
+area limits for a particular camera and exposure.
 
 Edit ``scatterometry_config.json``, then run::
 
@@ -19,6 +19,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
+from scipy.signal import find_peaks, peak_prominences
 
 
 # The script intentionally accepts no command-line arguments. Relative paths in
@@ -176,6 +177,11 @@ def estimate_background_map(
     return model.reshape(image.shape), noise
 
 
+def _subtract_background(image: np.ndarray, background: np.ndarray) -> np.ndarray:
+    """Subtract a background map and clip all negative residuals to zero."""
+    return np.maximum(np.nan_to_num(image - background, nan=0.0), 0.0)
+
+
 def _components(mask: np.ndarray) -> list[np.ndarray]:
     """Find 8-connected components without requiring SciPy."""
     height, width = mask.shape
@@ -229,7 +235,7 @@ def detect_spots(
         iterations=background_iterations,
         clip_sigma=background_clip_sigma,
     )
-    corrected = np.nan_to_num(image - background, nan=0.0)
+    corrected = _subtract_background(image, background)
     threshold = threshold_sigma * noise
     mask = corrected > threshold
     spots: list[Spot] = []
@@ -317,19 +323,14 @@ class ProjectionPeak:
 
 
 def _peak_prominence(projection: np.ndarray, peak: int) -> ProjectionPeak:
-    """Calculate prominence using the same contour definition as find_peaks."""
+    """Calculate prominence using SciPy's reference implementation."""
+    projection = np.asarray(projection, dtype=float)
+    prominences, left_bases, right_bases = peak_prominences(projection, [peak])
     height = float(projection[peak])
-    left_limit = peak
-    while left_limit > 0 and projection[left_limit - 1] <= height:
-        left_limit -= 1
-    right_limit = peak
-    last = len(projection) - 1
-    while right_limit < last and projection[right_limit + 1] <= height:
-        right_limit += 1
-    left_base = left_limit + int(np.argmin(projection[left_limit : peak + 1]))
-    right_base = peak + int(np.argmin(projection[peak : right_limit + 1]))
-    contour = max(float(projection[left_base]), float(projection[right_base]))
-    return ProjectionPeak(peak, height, height - contour, left_base, right_base, contour)
+    prominence = float(prominences[0])
+    left_base = int(left_bases[0])
+    right_base = int(right_bases[0])
+    return ProjectionPeak(peak, height, prominence, left_base, right_base, height - prominence)
 
 
 def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) -> list[ProjectionPeak]:
@@ -344,7 +345,12 @@ def _projection_peaks(projection: np.ndarray, intervals: list[tuple[int, int]]) 
             merged.append([start, stop])
     peaks: list[ProjectionPeak] = []
     for start, stop in merged:
-        index = start + int(np.argmax(projection[start:stop]))
+        segment = projection[start:stop]
+        local_peaks, _ = find_peaks(segment)
+        if local_peaks.size:
+            index = start + int(local_peaks[np.argmax(segment[local_peaks])])
+        else:
+            index = start + int(np.argmax(segment))
         peaks.append(_peak_prominence(projection, index))
     return peaks
 
@@ -369,15 +375,15 @@ def diagnostic_figure(
     axes[0, 2].set_title("Estimated background map")
     fig.colorbar(background_view, ax=axes[0, 2], shrink=0.8)
 
-    corrected_signed = image - background
-    corrected_view = axes[1, 0].imshow(corrected_signed, cmap="gray", origin="upper")
+    corrected = _subtract_background(image, background)
+    corrected_view = axes[1, 0].imshow(corrected, cmap="gray", origin="upper")
     axes[1, 0].set_title("Background-subtracted image")
     fig.colorbar(corrected_view, ax=axes[1, 0], shrink=0.8)
 
-    axes[1, 1].imshow(_log10_image(corrected_signed), cmap="gray", origin="upper")
+    axes[1, 1].imshow(_log10_image(corrected), cmap="gray", origin="upper")
     axes[1, 1].set_title("Background-subtracted image (log10 scale)")
 
-    axes[1, 2].imshow(corrected_signed, cmap="gray", origin="upper")
+    axes[1, 2].imshow(corrected, cmap="gray", origin="upper")
     axes[1, 2].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
     for spot, order in zip(spots, orders):
         x0, y0, x1, y1 = spot.bbox
@@ -387,7 +393,7 @@ def diagnostic_figure(
     axes[1, 2].set_title(f"Detections on corrected image ({len(spots)} spots)")
 
     raw_x_projection = image.sum(axis=0)
-    corrected_x_projection = corrected_signed.sum(axis=0)
+    corrected_x_projection = corrected.sum(axis=0)
     x_axis = axes[2, 0]
     x_axis.plot(raw_x_projection, color="tab:orange", lw=1, label="raw sum")
     x_axis.plot(corrected_x_projection, color="tab:blue", lw=1.2, label="background-subtracted sum")
@@ -415,7 +421,7 @@ def diagnostic_figure(
     x_axis.legend(loc="upper left", fontsize=8)
 
     raw_y_projection = image.sum(axis=1)
-    corrected_y_projection = corrected_signed.sum(axis=1)
+    corrected_y_projection = corrected.sum(axis=1)
     y_pixels = np.arange(image.shape[0])
     y_axis = axes[2, 1]
     y_axis.plot(raw_y_projection, y_pixels, color="tab:orange", lw=1, label="raw sum")
