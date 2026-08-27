@@ -4,7 +4,7 @@ The script deliberately uses only NumPy and Matplotlib.  It is intended as a
 transparent starting point: inspect the diagnostic figure, then tune the
 threshold and area limits for a particular camera and exposure.
 
-Edit the settings in ``USER SETTINGS`` below, then run::
+Edit ``scatterometry_config.json``, then run::
 
     python analyze_scatterometry.py
 """
@@ -12,6 +12,7 @@ Edit the settings in ``USER SETTINGS`` below, then run::
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,34 +21,55 @@ from matplotlib.patches import Rectangle
 import numpy as np
 
 
-# =============================================================================
-# USER SETTINGS -- edit these values before running the script
-# =============================================================================
+# The script intentionally accepts no command-line arguments. Relative paths in
+# the JSON file are resolved relative to the JSON file itself.
+CONFIG_PATH = Path(__file__).with_name("scatterometry_config.json")
 
-# Set this to your measurement, for example Path("measurements/sample_01.png").
-# When USE_DEMO_IMAGE is True, IMAGE_PATH is ignored.
-IMAGE_PATH: Path | None = None
-USE_DEMO_IMAGE = True
 
-# Detection settings. Lower THRESHOLD_SIGMA detects fainter spots but may also
-# detect more noise. MIN_AREA and MAX_AREA reject objects by pixel count.
-THRESHOLD_SIGMA = 6.0
-MIN_AREA = 12
-MAX_AREA: int | None = None
+@dataclass(frozen=True)
+class AnalysisConfig:
+    """User-adjustable values loaded from the JSON configuration file."""
 
-# Pixel coordinate of the known zeroth order. If None, the strongest detected
-# spot is treated as order zero.
-ZERO_ORDER_X: float | None = None
+    image_path: Path | None
+    use_demo_image: bool
+    threshold_sigma: float
+    min_area: int
+    max_area: int | None
+    zero_order_x: float | None
+    normalization: str
+    csv_output: Path | None
+    figure_output: Path | None
+    show_figure: bool
 
-# One of "sum", "max", or "none". "sum" is convenient for comparing relative
-# diffraction efficiencies with RCWA.
-NORMALIZATION = "sum"
 
-# Leave these as None to derive filenames from IMAGE_PATH. For the demo they
-# become scatterometry_demo_signal.csv and scatterometry_demo_debug.png.
-CSV_OUTPUT: Path | None = None
-FIGURE_OUTPUT: Path | None = None
-SHOW_FIGURE = True
+def load_config(path: str | Path = CONFIG_PATH) -> AnalysisConfig:
+    """Load settings and resolve input/output paths relative to the config."""
+    path = Path(path).resolve()
+    with path.open(encoding="utf-8") as stream:
+        values = json.load(stream)
+
+    def optional_path(key: str) -> Path | None:
+        value = values.get(key)
+        if value is None:
+            return None
+        candidate = Path(value)
+        return candidate if candidate.is_absolute() else path.parent / candidate
+
+    normalization = str(values.get("normalization", "sum"))
+    if normalization not in {"sum", "max", "none"}:
+        raise ValueError("config normalization must be 'sum', 'max', or 'none'")
+    return AnalysisConfig(
+        image_path=optional_path("image_path"),
+        use_demo_image=bool(values.get("use_demo_image", False)),
+        threshold_sigma=float(values.get("threshold_sigma", 6.0)),
+        min_area=int(values.get("min_area", 12)),
+        max_area=None if values.get("max_area") is None else int(values["max_area"]),
+        zero_order_x=None if values.get("zero_order_x") is None else float(values["zero_order_x"]),
+        normalization=normalization,
+        csv_output=optional_path("csv_output"),
+        figure_output=optional_path("figure_output"),
+        show_figure=bool(values.get("show_figure", True)),
+    )
 
 
 @dataclass(frozen=True)
@@ -189,32 +211,50 @@ def diagnostic_figure(
     orders: np.ndarray,
     signal: np.ndarray,
 ) -> plt.Figure:
-    """Create views of the input, segmentation, projection, and final signal."""
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+    """Show linear/log images, detections, x/y projections, and final signal."""
+    fig, axes = plt.subplots(2, 3, figsize=(17, 9), constrained_layout=True)
     axes[0, 0].imshow(image, cmap="gray", origin="upper")
     axes[0, 0].set_title("Input image")
-    axes[0, 1].imshow(image, cmap="gray", origin="upper")
-    axes[0, 1].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
+
+    finite_min = float(np.nanmin(image))
+    log_image = np.log1p(np.maximum(image - finite_min, 0.0))
+    axes[0, 1].imshow(log_image, cmap="gray", origin="upper")
+    axes[0, 1].set_title("Input image (log scale)")
+
+    axes[0, 2].imshow(image, cmap="gray", origin="upper")
+    axes[0, 2].contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
     for spot, order in zip(spots, orders):
         x0, y0, x1, y1 = spot.bbox
-        axes[0, 1].add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, edgecolor="lime"))
-        axes[0, 1].plot(spot.x, spot.y, "r+", ms=8)
-        axes[0, 1].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
-    axes[0, 1].set_title(f"Threshold mask and detections ({len(spots)} spots)")
+        axes[0, 2].add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, edgecolor="lime"))
+        axes[0, 2].plot(spot.x, spot.y, "r+", ms=8)
+        axes[0, 2].text(spot.x + 3, spot.y, f"m={order}", color="yellow", fontsize=9)
+    axes[0, 2].set_title(f"Threshold mask and detections ({len(spots)} spots)")
 
-    x_projection = np.maximum(image - background, 0.0).sum(axis=0)
+    corrected = np.maximum(image - background, 0.0)
+    x_projection = corrected.sum(axis=0)
     axes[1, 0].plot(x_projection, color="black", lw=1)
     for spot, order in zip(spots, orders):
         axes[1, 0].axvline(spot.x, color="tab:red", alpha=0.45)
         axes[1, 0].text(spot.x, x_projection.max() * 0.93, str(order), ha="center", va="top")
     axes[1, 0].set(title="Background-corrected x projection", xlabel="x pixel", ylabel="summed intensity")
 
-    markerline, stemlines, baseline = axes[1, 1].stem(orders, signal)
+    y_projection = corrected.sum(axis=1)
+    axes[1, 1].plot(y_projection, np.arange(image.shape[0]), color="black", lw=1)
+    for spot, order in zip(spots, orders):
+        axes[1, 1].axhline(spot.y, color="tab:red", alpha=0.35)
+    axes[1, 1].invert_yaxis()
+    axes[1, 1].set(
+        title="Background-corrected y projection",
+        xlabel="summed intensity",
+        ylabel="y pixel",
+    )
+
+    markerline, stemlines, baseline = axes[1, 2].stem(orders, signal)
     plt.setp(markerline, markersize=6)
     plt.setp(stemlines, linewidth=2)
     plt.setp(baseline, color="0.5")
-    axes[1, 1].set(title="Extracted diffraction signal", xlabel="assigned order m", ylabel="normalized intensity")
-    axes[1, 1].grid(alpha=0.25)
+    axes[1, 2].set(title="Extracted diffraction signal", xlabel="assigned order m", ylabel="normalized intensity")
+    axes[1, 2].grid(alpha=0.25)
     return fig
 
 
@@ -233,31 +273,32 @@ def synthetic_image(seed: int = 4) -> np.ndarray:
 
 
 def main() -> None:
-    if USE_DEMO_IMAGE:
+    config = load_config()
+    if config.use_demo_image:
         image = synthetic_image()
-        base = Path("scatterometry_demo")
-    elif IMAGE_PATH is not None:
-        image = load_grayscale(IMAGE_PATH)
-        base = IMAGE_PATH.with_suffix("")
+        base = CONFIG_PATH.parent / "scatterometry_demo"
+    elif config.image_path is not None:
+        image = load_grayscale(config.image_path)
+        base = config.image_path.with_suffix("")
     else:
-        raise ValueError("Set IMAGE_PATH or enable USE_DEMO_IMAGE in USER SETTINGS")
+        raise ValueError("Set image_path or enable use_demo_image in the config file")
 
     spots, mask, background = detect_spots(
         image,
-        threshold_sigma=THRESHOLD_SIGMA,
-        min_area=MIN_AREA,
-        max_area=MAX_AREA,
+        threshold_sigma=config.threshold_sigma,
+        min_area=config.min_area,
+        max_area=config.max_area,
     )
-    orders, signal = spots_to_signal(spots, ZERO_ORDER_X, NORMALIZATION)
-    csv_path = CSV_OUTPUT or base.with_name(base.name + "_signal.csv")
-    figure_path = FIGURE_OUTPUT or base.with_name(base.name + "_debug.png")
+    orders, signal = spots_to_signal(spots, config.zero_order_x, config.normalization)
+    csv_path = config.csv_output or base.with_name(base.name + "_signal.csv")
+    figure_path = config.figure_output or base.with_name(base.name + "_debug.png")
     save_csv(csv_path, spots, orders, signal)
     fig = diagnostic_figure(image, mask, background, spots, orders, signal)
     fig.savefig(figure_path, dpi=160)
     print(f"Detected {len(spots)} spots; background={background:.6g}")
     print(f"Saved signal: {csv_path}")
     print(f"Saved diagnostics: {figure_path}")
-    if SHOW_FIGURE:
+    if config.show_figure:
         plt.show()
     else:
         plt.close(fig)

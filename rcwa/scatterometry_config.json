@@ -1,0 +1,12 @@
+{
+    "image_path": null,
+    "use_demo_image": true,
+    "threshold_sigma": 6.0,
+    "min_area": 12,
+    "max_area": null,
+    "zero_order_x": null,
+    "normalization": "sum",
+    "csv_output": null,
+    "figure_output": null,
+    "show_figure": true
+}
