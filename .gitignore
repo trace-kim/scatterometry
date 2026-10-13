@@ -31,3 +31,5 @@ Thumbs.db
 
 # Local runtime output
 *.log
+
+web/node_modules

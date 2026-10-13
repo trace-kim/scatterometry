@@ -1,0 +1,4 @@
+# pnpm settings for the web UI (single package). Keep pnpm's minimum-release-age guard:
+# pin dependencies to releases that have been public for a while instead of excluding them.
+packages:
+  - .

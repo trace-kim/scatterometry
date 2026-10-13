@@ -1,0 +1,3167 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RCWA mask simulator API",
+    "description": "Photomask RCWA solves, geometry and field views. Lengths in nm, angles in degrees.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Api Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/presets": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Presets",
+        "operationId": "list_presets_api_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PresetInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Presets Api Presets Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/presets/{preset_id}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get Preset",
+        "operationId": "get_preset_api_presets__preset_id__get",
+        "parameters": [
+          {
+            "name": "preset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Preset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/project/normalize": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Normalize Project",
+        "description": "Parse a saved project file: fill defaults and upgrade older versions.\n\nThe UI sends every opened file through here, so it never has to know the defaults\nor the version history itself.",
+        "operationId": "normalize_project_api_project_normalize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Document"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/project/check": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Check Project",
+        "description": "Validate a project and describe the slices the solver would receive.\n\nDomain problems (unknown materials, CD larger than the pitch, ...) come back as\n`errors`, not as an HTTP error, so the editor can show them while the user types.",
+        "operationId": "check_project_api_project_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Project"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geometry/section": {
+      "post": {
+        "tags": [
+          "geometry"
+        ],
+        "summary": "Geometry Section",
+        "description": "Material map of an x-z or y-z cross-section.\n\nNPZ: `material` (uint8, n_z x n_lateral, index into project.materials), `lateral_nm`, `z_nm`.",
+        "operationId": "geometry_section_api_geometry_section_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geometry/plane": {
+      "post": {
+        "tags": [
+          "geometry"
+        ],
+        "summary": "Geometry Plane",
+        "description": "Material map of one slice seen from above.\n\nNPZ: `material` (uint8, n x n; rows follow y), `x_nm`, `y_nm`.",
+        "operationId": "geometry_plane_api_geometry_plane_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geometry/boxes": {
+      "post": {
+        "tags": [
+          "geometry"
+        ],
+        "summary": "Geometry Boxes",
+        "description": "Boxes tiling the stack down to z_max_nm (default: the whole stack) for the 3D view.",
+        "operationId": "geometry_boxes_api_geometry_boxes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoxesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoxesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dielectric/section": {
+      "post": {
+        "tags": [
+          "dielectric"
+        ],
+        "summary": "Dielectric Section",
+        "description": "Complex permittivity on a cross-section (Fourier-truncated in patterned slices if `fourier`).\n\nNPZ: `eps` (complex64, n_z x n_lateral), `lateral_nm`, `z_nm`.",
+        "operationId": "dielectric_section_api_dielectric_section_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DielectricSectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dielectric/plane": {
+      "post": {
+        "tags": [
+          "dielectric"
+        ],
+        "summary": "Dielectric Plane",
+        "description": "Complex permittivity of one slice seen from above.\n\nNPZ: `eps` (complex64, n x n; rows follow y), `x_nm`, `y_nm`.",
+        "operationId": "dielectric_plane_api_dielectric_plane_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DielectricPlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dielectric/convolution": {
+      "post": {
+        "tags": [
+          "dielectric"
+        ],
+        "summary": "Dielectric Convolution",
+        "description": "The slice's convolution (Toeplitz) matrix [eps].\n\nNPZ: `matrix` (complex64, Nh x Nh), `mx`, `my` (int16 harmonic indices of rows/columns).",
+        "operationId": "dielectric_convolution_api_dielectric_convolution_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SliceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_api_runs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Runs Api Runs Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Submit Run",
+        "operationId": "submit_run_api_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Delete Run",
+        "description": "Cancel a queued or running run; forget a finished one.",
+        "operationId": "delete_run_api_runs__run_id__delete",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/project": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Project",
+        "operationId": "run_project_api_runs__run_id__project_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/slices": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Slices",
+        "operationId": "run_slices_api_runs__run_id__slices_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SliceInfo"
+                  },
+                  "title": "Response Run Slices Api Runs  Run Id  Slices Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/orders": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Orders",
+        "operationId": "run_orders_api_runs__run_id__orders_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrdersResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/pupil": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Pupil",
+        "operationId": "run_pupil_api_runs__run_id__pupil_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          },
+          {
+            "name": "na",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 2,
+              "minimum": 0,
+              "description": "Wafer-side NA; 0 = none",
+              "default": 0.0,
+              "title": "Na"
+            },
+            "description": "Wafer-side NA; 0 = none"
+          },
+          {
+            "name": "reduction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 4.0,
+              "title": "Reduction"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PupilResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/flux": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Flux",
+        "description": "Net downward power through a unit cell vs depth (1 = incident).",
+        "operationId": "run_flux_api_runs__run_id__flux_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          },
+          {
+            "name": "z_min_nm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Z Min Nm"
+            }
+          },
+          {
+            "name": "z_max_nm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Z Max Nm"
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4000,
+              "minimum": 2,
+              "default": 600,
+              "title": "N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FluxResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/absorption": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Absorption",
+        "description": "Absorbed fraction of the incident power per named layer, plus R, T, A totals.",
+        "operationId": "run_absorption_api_runs__run_id__absorption_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbsorptionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/modes": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Modes",
+        "description": "Eigenmode propagation constants kz/k0 of one slice.",
+        "operationId": "run_modes_api_runs__run_id__modes_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "slice",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Slice"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/field/section": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Field Section",
+        "description": "E field on an x-z or y-z cross-section (incident amplitude 1).\n\nNPZ: `Ex`, `Ey`, `Ez` (complex64, n_z x n_lateral), `material` (uint8 map for boundaries),\n`lateral_nm`, `z_nm`.",
+        "operationId": "run_field_section_api_runs__run_id__field_section_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "axis",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "x",
+                "y"
+              ],
+              "type": "string",
+              "default": "x",
+              "title": "Axis"
+            }
+          },
+          {
+            "name": "offset_nm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0.0,
+              "title": "Offset Nm"
+            }
+          },
+          {
+            "name": "periods",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 8,
+              "exclusiveMinimum": 0,
+              "default": 2.0,
+              "title": "Periods"
+            }
+          },
+          {
+            "name": "z_min_nm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": -20.0,
+              "title": "Z Min Nm"
+            }
+          },
+          {
+            "name": "z_max_nm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 100.0,
+              "title": "Z Max Nm"
+            }
+          },
+          {
+            "name": "n_lateral",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2048,
+              "minimum": 8,
+              "default": 400,
+              "title": "N Lateral"
+            }
+          },
+          {
+            "name": "n_z",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4096,
+              "minimum": 8,
+              "default": 400,
+              "title": "N Z"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/field/plane": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run Field Plane",
+        "description": "E field on an x-y plane at `depth_nm` (negative = above the mask).\n\nNPZ: `Ex`, `Ey`, `Ez` (complex64, n x n; rows follow y), `material` (uint8), `x_nm`, `y_nm`.",
+        "operationId": "run_field_plane_api_runs__run_id__field_plane_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "depth_nm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Depth Nm"
+            }
+          },
+          {
+            "name": "pol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "TE",
+                    "TM"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the run's first polarization",
+              "title": "Pol"
+            },
+            "description": "Defaults to the run's first polarization"
+          },
+          {
+            "name": "periods",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 8,
+              "exclusiveMinimum": 0,
+              "default": 2.0,
+              "title": "Periods"
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1024,
+              "minimum": 8,
+              "default": 200,
+              "title": "N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sweeps": {
+      "post": {
+        "tags": [
+          "sweeps"
+        ],
+        "summary": "Submit Sweep",
+        "description": "Start a sweep; records also arrive live as `sweep-records` events on /api/events.",
+        "operationId": "submit_sweep_api_sweeps_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sweeps/{sweep_id}": {
+      "get": {
+        "tags": [
+          "sweeps"
+        ],
+        "summary": "Get Sweep",
+        "operationId": "get_sweep_api_sweeps__sweep_id__get",
+        "parameters": [
+          {
+            "name": "sweep_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sweep Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SweepResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sweeps"
+        ],
+        "summary": "Delete Sweep",
+        "description": "Cancel a queued or running sweep; forget a finished one.",
+        "operationId": "delete_sweep_api_sweeps__sweep_id__delete",
+        "parameters": [
+          {
+            "name": "sweep_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sweep Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_jobs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Jobs Api Jobs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Get Job",
+        "description": "Status of a run or sweep by id.",
+        "operationId": "get_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Events",
+        "description": "SSE stream. Event types:\n\n- `snapshot`: {jobs: JobInfo[]} once on connect (resync after reconnects)\n- `job`: {job: JobInfo} on every status change and at most 10x/s while running\n- `sweep-records`: {job_id, records: SweepRecord[]} after each sweep value",
+        "operationId": "events_api_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/python-views": {
+      "get": {
+        "tags": [
+          "python views"
+        ],
+        "summary": "List Python Views",
+        "operationId": "list_python_views_api_python_views_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PythonViewInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Python Views Api Python Views Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/python-views/{view_id}": {
+      "post": {
+        "tags": [
+          "python views"
+        ],
+        "summary": "Evaluate Python View",
+        "description": "Evaluate a view; \"run\" views use the given run (its own project, not `project`).",
+        "operationId": "evaluate_python_view_api_python_views__view_id__post",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PythonViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonViewResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AbsorptionResponse": {
+        "properties": {
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/LayerAbsorption"
+            },
+            "type": "array",
+            "title": "Layers"
+          },
+          "R": {
+            "type": "number",
+            "title": "R"
+          },
+          "T": {
+            "type": "number",
+            "title": "T"
+          },
+          "A": {
+            "type": "number",
+            "title": "A"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pol",
+          "layers",
+          "R",
+          "T",
+          "A"
+        ],
+        "title": "AbsorptionResponse"
+      },
+      "BoxesRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "periods": {
+            "type": "number",
+            "maximum": 8.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Periods",
+            "default": 2.0
+          },
+          "z_max_nm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Max Nm"
+          },
+          "n": {
+            "type": "integer",
+            "maximum": 512.0,
+            "minimum": 8.0,
+            "title": "N",
+            "default": 160
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "BoxesRequest"
+      },
+      "BoxesResponse": {
+        "properties": {
+          "materials": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
+          "boxes": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Boxes"
+          },
+          "size_nm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Size Nm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "materials",
+          "boxes",
+          "size_nm"
+        ],
+        "title": "BoxesResponse",
+        "description": "Axis-aligned boxes [material index, x0, x1, y0, y1, z0, z1] in nm; clear materials omitted."
+      },
+      "CheckResult": {
+        "properties": {
+          "digest": {
+            "type": "string",
+            "title": "Digest"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slices": {
+            "items": {
+              "$ref": "#/components/schemas/SliceInfo"
+            },
+            "type": "array",
+            "title": "Slices",
+            "default": []
+          },
+          "sweep_parameters": {
+            "items": {
+              "$ref": "#/components/schemas/SweepParameter"
+            },
+            "type": "array",
+            "title": "Sweep Parameters",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "digest",
+          "errors"
+        ],
+        "title": "CheckResult",
+        "description": "Validation of a project plus everything the stack editor shows about it."
+      },
+      "DielectricPlaneRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "slice": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Slice",
+            "default": 0
+          },
+          "periods": {
+            "type": "number",
+            "maximum": 8.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Periods",
+            "default": 2.0
+          },
+          "n": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 8.0,
+            "title": "N",
+            "default": 200
+          },
+          "fourier": {
+            "type": "boolean",
+            "title": "Fourier",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "DielectricPlaneRequest"
+      },
+      "DielectricSectionRequest": {
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y"
+            ],
+            "title": "Axis",
+            "default": "x"
+          },
+          "offset_nm": {
+            "type": "number",
+            "title": "Offset Nm",
+            "default": 0.0
+          },
+          "periods": {
+            "type": "number",
+            "maximum": 8.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Periods",
+            "default": 2.0
+          },
+          "z_min_nm": {
+            "type": "number",
+            "title": "Z Min Nm",
+            "default": -20.0
+          },
+          "z_max_nm": {
+            "type": "number",
+            "title": "Z Max Nm",
+            "default": 100.0
+          },
+          "n_lateral": {
+            "type": "integer",
+            "maximum": 2048.0,
+            "minimum": 8.0,
+            "title": "N Lateral",
+            "default": 400
+          },
+          "n_z": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 8.0,
+            "title": "N Z",
+            "default": 400
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "fourier": {
+            "type": "boolean",
+            "title": "Fourier",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "DielectricSectionRequest"
+      },
+      "FluxResponse": {
+        "properties": {
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "z_nm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Z Nm"
+          },
+          "flux": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Flux"
+          },
+          "interfaces_nm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Interfaces Nm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pol",
+          "z_nm",
+          "flux",
+          "interfaces_nm"
+        ],
+        "title": "FluxResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IlluminationDoc": {
+        "properties": {
+          "wavelength_nm": {
+            "type": "number",
+            "title": "Wavelength Nm",
+            "default": 13.5
+          },
+          "theta_deg": {
+            "type": "number",
+            "title": "Theta Deg",
+            "default": 6.0
+          },
+          "phi_deg": {
+            "type": "number",
+            "title": "Phi Deg",
+            "default": 0.0
+          },
+          "polarization": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM",
+              "TE+TM"
+            ],
+            "title": "Polarization",
+            "default": "TE"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IlluminationDoc"
+      },
+      "JobInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "run",
+              "sweep"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created": {
+            "type": "number",
+            "title": "Created"
+          },
+          "started": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started"
+          },
+          "finished": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished"
+          },
+          "project_digest": {
+            "type": "string",
+            "title": "Project Digest"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "default": {}
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check"
+          },
+          "record_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "progress",
+          "message",
+          "created",
+          "project_digest"
+        ],
+        "title": "JobInfo"
+      },
+      "LayerAbsorption": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "absorbed": {
+            "type": "number",
+            "title": "Absorbed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "absorbed"
+        ],
+        "title": "LayerAbsorption"
+      },
+      "LayerDoc": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "material": {
+            "type": "string",
+            "title": "Material"
+          },
+          "thickness_nm": {
+            "type": "number",
+            "title": "Thickness Nm"
+          },
+          "patterned": {
+            "type": "boolean",
+            "title": "Patterned",
+            "default": false
+          },
+          "swa_deg": {
+            "type": "number",
+            "title": "Swa Deg",
+            "default": 90.0
+          },
+          "steps": {
+            "type": "integer",
+            "title": "Steps",
+            "default": 1
+          },
+          "group": {
+            "type": "string",
+            "title": "Group",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "material",
+          "thickness_nm"
+        ],
+        "title": "LayerDoc"
+      },
+      "MaterialDoc": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "n": {
+            "type": "number",
+            "title": "N"
+          },
+          "k": {
+            "type": "number",
+            "title": "K",
+            "default": 0.0
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "n"
+        ],
+        "title": "MaterialDoc"
+      },
+      "ModesResponse": {
+        "properties": {
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "slice": {
+            "type": "integer",
+            "title": "Slice"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kz_re": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Kz Re"
+          },
+          "kz_im": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Kz Im"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pol",
+          "slice",
+          "label",
+          "kz_re",
+          "kz_im"
+        ],
+        "title": "ModesResponse"
+      },
+      "NumericsDoc": {
+        "properties": {
+          "nx": {
+            "type": "integer",
+            "title": "Nx",
+            "default": 15
+          },
+          "ny": {
+            "type": "integer",
+            "title": "Ny",
+            "default": 15
+          },
+          "grid": {
+            "type": "integer",
+            "title": "Grid",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NumericsDoc"
+      },
+      "OrderRow": {
+        "properties": {
+          "m": {
+            "type": "integer",
+            "title": "M"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "r_theta_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Theta Deg"
+          },
+          "r_phi_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Phi Deg"
+          },
+          "R": {
+            "type": "number",
+            "title": "R"
+          },
+          "T": {
+            "type": "number",
+            "title": "T"
+          },
+          "r_te_abs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Te Abs"
+          },
+          "r_te_phase_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Te Phase Deg"
+          },
+          "r_tm_abs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Tm Abs"
+          },
+          "r_tm_phase_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Tm Phase Deg"
+          },
+          "r_propagating": {
+            "type": "boolean",
+            "title": "R Propagating"
+          },
+          "t_propagating": {
+            "type": "boolean",
+            "title": "T Propagating"
+          }
+        },
+        "type": "object",
+        "required": [
+          "m",
+          "n",
+          "R",
+          "T",
+          "r_propagating",
+          "t_propagating"
+        ],
+        "title": "OrderRow"
+      },
+      "OrdersResponse": {
+        "properties": {
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/OrderRow"
+            },
+            "type": "array",
+            "title": "Orders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pol",
+          "orders"
+        ],
+        "title": "OrdersResponse"
+      },
+      "PatternDoc": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "ls_v",
+              "ls_h",
+              "ch_square",
+              "ch_staggered"
+            ],
+            "title": "Kind",
+            "default": "ls_v"
+          },
+          "pitch_x_nm": {
+            "type": "number",
+            "title": "Pitch X Nm",
+            "default": 128.0
+          },
+          "pitch_y_nm": {
+            "type": "number",
+            "title": "Pitch Y Nm",
+            "default": 128.0
+          },
+          "cd_x_nm": {
+            "type": "number",
+            "title": "Cd X Nm",
+            "default": 64.0
+          },
+          "cd_y_nm": {
+            "type": "number",
+            "title": "Cd Y Nm",
+            "default": 64.0
+          },
+          "hole_shape": {
+            "type": "string",
+            "enum": [
+              "rect",
+              "ellipse"
+            ],
+            "title": "Hole Shape",
+            "default": "rect"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "holes",
+              "pillars"
+            ],
+            "title": "Tone",
+            "default": "holes"
+          },
+          "fill": {
+            "type": "string",
+            "title": "Fill",
+            "default": "Vacuum"
+          },
+          "cd_reference": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "bottom"
+            ],
+            "title": "Cd Reference",
+            "default": "top"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PatternDoc"
+      },
+      "PlaneRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "slice": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Slice",
+            "default": 0
+          },
+          "periods": {
+            "type": "number",
+            "maximum": 8.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Periods",
+            "default": 2.0
+          },
+          "n": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 8.0,
+            "title": "N",
+            "default": 200
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "PlaneRequest"
+      },
+      "PresetInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "PresetInfo"
+      },
+      "Project": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "masksim-project",
+            "title": "Format",
+            "default": "masksim-project"
+          },
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": "Untitled"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialDoc"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
+          "superstrate": {
+            "type": "string",
+            "title": "Superstrate"
+          },
+          "substrate": {
+            "type": "string",
+            "title": "Substrate"
+          },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/LayerDoc"
+            },
+            "type": "array",
+            "title": "Layers"
+          },
+          "repeats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Repeats"
+          },
+          "pattern": {
+            "$ref": "#/components/schemas/PatternDoc"
+          },
+          "illumination": {
+            "$ref": "#/components/schemas/IlluminationDoc"
+          },
+          "numerics": {
+            "$ref": "#/components/schemas/NumericsDoc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "materials",
+          "superstrate",
+          "substrate",
+          "layers"
+        ],
+        "title": "Project"
+      },
+      "PupilResponse": {
+        "properties": {
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "n_ref": {
+            "type": "number",
+            "title": "N Ref"
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Basis"
+          },
+          "m": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "M"
+          },
+          "n": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "N"
+          },
+          "sx": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Sx"
+          },
+          "sy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Sy"
+          },
+          "R": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "R"
+          },
+          "phase_deg": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Phase Deg"
+          },
+          "center": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Center"
+          },
+          "na_mask": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Na Mask"
+          },
+          "captured": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pol",
+          "n_ref",
+          "basis",
+          "m",
+          "n",
+          "sx",
+          "sy",
+          "R",
+          "phase_deg",
+          "center"
+        ],
+        "title": "PupilResponse",
+        "description": "Propagating reflected orders in direction-cosine space (kx, ky)/(k0 n_incident)."
+      },
+      "PythonViewInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "needs": {
+            "type": "string",
+            "title": "Needs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "needs"
+        ],
+        "title": "PythonViewInfo"
+      },
+      "PythonViewRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "pol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "TE",
+                  "TM"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pol"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "PythonViewRequest"
+      },
+      "PythonViewResult": {
+        "properties": {
+          "option": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Option"
+          }
+        },
+        "type": "object",
+        "required": [
+          "option"
+        ],
+        "title": "PythonViewResult"
+      },
+      "RunRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "crosscheck": {
+            "type": "boolean",
+            "title": "Crosscheck",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "RunRequest"
+      },
+      "SectionRequest": {
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y"
+            ],
+            "title": "Axis",
+            "default": "x"
+          },
+          "offset_nm": {
+            "type": "number",
+            "title": "Offset Nm",
+            "default": 0.0
+          },
+          "periods": {
+            "type": "number",
+            "maximum": 8.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Periods",
+            "default": 2.0
+          },
+          "z_min_nm": {
+            "type": "number",
+            "title": "Z Min Nm",
+            "default": -20.0
+          },
+          "z_max_nm": {
+            "type": "number",
+            "title": "Z Max Nm",
+            "default": 100.0
+          },
+          "n_lateral": {
+            "type": "integer",
+            "maximum": 2048.0,
+            "minimum": 8.0,
+            "title": "N Lateral",
+            "default": 400
+          },
+          "n_z": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 8.0,
+            "title": "N Z",
+            "default": 400
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "SectionRequest"
+      },
+      "SliceInfo": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "layer_name": {
+            "type": "string",
+            "title": "Layer Name"
+          },
+          "material": {
+            "type": "string",
+            "title": "Material"
+          },
+          "fill": {
+            "type": "string",
+            "title": "Fill"
+          },
+          "z_top_nm": {
+            "type": "number",
+            "title": "Z Top Nm"
+          },
+          "thickness_nm": {
+            "type": "number",
+            "title": "Thickness Nm"
+          },
+          "patterned": {
+            "type": "boolean",
+            "title": "Patterned"
+          },
+          "cd_x_nm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd X Nm"
+          },
+          "cd_y_nm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Y Nm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "label",
+          "layer_name",
+          "material",
+          "fill",
+          "z_top_nm",
+          "thickness_nm",
+          "patterned"
+        ],
+        "title": "SliceInfo"
+      },
+      "SliceRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "slice": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Slice",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "SliceRequest"
+      },
+      "StackSummary": {
+        "properties": {
+          "total_thickness_nm": {
+            "type": "number",
+            "title": "Total Thickness Nm"
+          },
+          "slice_count": {
+            "type": "integer",
+            "title": "Slice Count"
+          },
+          "patterned_slice_count": {
+            "type": "integer",
+            "title": "Patterned Slice Count"
+          },
+          "unit_cell_nm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Unit Cell Nm"
+          },
+          "periodic_axes": {
+            "type": "string",
+            "enum": [
+              "none",
+              "x",
+              "y",
+              "xy"
+            ],
+            "title": "Periodic Axes"
+          },
+          "harmonics": {
+            "type": "integer",
+            "title": "Harmonics"
+          },
+          "matrix_size": {
+            "type": "integer",
+            "title": "Matrix Size"
+          },
+          "grid": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Grid"
+          },
+          "polarizations": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "TE",
+                "TM"
+              ]
+            },
+            "type": "array",
+            "title": "Polarizations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_thickness_nm",
+          "slice_count",
+          "patterned_slice_count",
+          "unit_cell_nm",
+          "periodic_axes",
+          "harmonics",
+          "matrix_size",
+          "grid",
+          "polarizations"
+        ],
+        "title": "StackSummary"
+      },
+      "SweepParameter": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "start": {
+            "type": "number",
+            "title": "Start"
+          },
+          "stop": {
+            "type": "number",
+            "title": "Stop"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "start",
+          "stop",
+          "points"
+        ],
+        "title": "SweepParameter"
+      },
+      "SweepRecord": {
+        "properties": {
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "pol": {
+            "type": "string",
+            "enum": [
+              "TE",
+              "TM"
+            ],
+            "title": "Pol"
+          },
+          "m": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "M"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N"
+          },
+          "R": {
+            "type": "number",
+            "title": "R"
+          },
+          "phase_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Deg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "pol",
+          "R"
+        ],
+        "title": "SweepRecord"
+      },
+      "SweepRequest": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "parameter": {
+            "type": "string",
+            "title": "Parameter"
+          },
+          "start": {
+            "type": "number",
+            "title": "Start"
+          },
+          "stop": {
+            "type": "number",
+            "title": "Stop"
+          },
+          "points": {
+            "type": "integer",
+            "maximum": 401.0,
+            "minimum": 1.0,
+            "title": "Points",
+            "default": 11
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "parameter",
+          "start",
+          "stop"
+        ],
+        "title": "SweepRequest"
+      },
+      "SweepResult": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobInfo"
+          },
+          "parameter": {
+            "type": "string",
+            "title": "Parameter"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/SweepRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "parameter",
+          "label",
+          "records"
+        ],
+        "title": "SweepResult"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
