@@ -1,0 +1,35 @@
+# Workspace root (no package of its own). Members:
+#   rcwa/    -> rcwa-masksim: the RCWA solver (`rcwa`) and photomask layer (`masksim`)
+#   server/  -> maskserver:   FastAPI backend for the web UI in web/
+[tool.uv.workspace]
+members = ["rcwa", "server"]
+
+[tool.uv.sources]
+rcwa-masksim = { workspace = true }
+maskserver = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "rcwa-masksim[scripts]",
+    "maskserver",
+    "pytest>=9.0",
+    "httpx2>=2.13",  # Starlette TestClient transport
+    "ruff>=0.13",
+]
+
+[tool.pytest.ini_options]
+# Default (prepend) import mode: importlib mode names tests "rcwa.tests.*" and shadows the
+# real rcwa package. Test file names must therefore be unique across both test folders.
+testpaths = ["rcwa/tests", "server/tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E741"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rcwa", "masksim", "maskserver"]

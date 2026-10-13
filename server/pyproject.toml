@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maskserver"
+version = "0.1.0"
+description = "FastAPI backend for the RCWA mask simulator web UI"
+requires-python = ">=3.12"
+dependencies = [
+    "rcwa-masksim",
+    "fastapi>=0.140",
+    "uvicorn[standard]>=0.34",
+    "sse-starlette>=3.0",
+    "pydantic-settings>=2.10",
+    "threadpoolctl>=3.5",
+]
+
+[project.scripts]
+maskserver = "maskserver.__main__:main"
+
+[tool.uv.sources]
+rcwa-masksim = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["maskserver"]
