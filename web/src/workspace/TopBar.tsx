@@ -15,7 +15,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { errorMessages } from "@/api/client";
-import { FINISHED, fetchPreset, normalizeProject, useCancelJob, usePresets, useSubmitRun } from "@/api/hooks";
+import { fetchPreset, normalizeProject, usePresets } from "@/api/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,8 +33,8 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { downloadText } from "@/lib/download";
 import { seconds } from "@/lib/format";
-import { useRunState, useStack } from "@/panels/common";
-import { isDirty, useProjectStore } from "@/state/project";
+import { useRunControl, useStack } from "@/panels/common";
+import { editProject, isDirty, useProjectStore } from "@/state/project";
 import { useSession } from "@/state/session";
 import { PANELS, useWorkspace } from "./Workspace";
 
@@ -50,30 +50,13 @@ export function TopBar({ connected }: { connected: boolean }) {
   const canRedo = useProjectStore((s) => s.future.length > 0);
   const { undo, redo, load, markSaved } = useProjectStore.getState();
   const { errors } = useStack();
-  const run = useRunState();
+  const { run, running, canRun, start: startRun, stop } = useRunControl();
   const crosscheck = useSession((s) => s.crosscheck);
   const setCrosscheck = useSession((s) => s.setCrosscheck);
-  const setRun = useSession((s) => s.setRun);
-  const submit = useSubmitRun();
-  const cancel = useCancelJob();
   const presets = usePresets();
   const workspace = useWorkspace();
   const { theme, setTheme } = useTheme();
   const fileInput = useRef<HTMLInputElement>(null);
-
-  const running = !!run.job && !FINISHED.has(run.job.status);
-  const canRun = !!project && errors.length === 0 && !running && !submit.isPending;
-
-  const startRun = () => {
-    if (!project || !canRun) return;
-    submit.mutate(
-      { project, crosscheck },
-      {
-        onSuccess: (job) => setRun(job.id),
-        onError: (error) => toast.error("Couldn't start the run", { description: errorMessages(error).join("; ") }),
-      },
-    );
-  };
 
   const save = () => {
     if (!project) return;
@@ -166,7 +149,7 @@ export function TopBar({ connected }: { connected: boolean }) {
           )}
         </div>
       );
-    if (errors.length) return <span className="text-[11px] text-destructive">Fix the stack to run</span>;
+    if (errors.length) return <span className="text-[11px] text-destructive">Fix the setup to run</span>;
     return null;
   })();
 
@@ -233,15 +216,26 @@ export function TopBar({ connected }: { connected: boolean }) {
         <HugeiconsIcon icon={Redo02Icon} />
       </Button>
 
-      <div className="min-w-0 truncate text-xs text-muted-foreground" title={project?.name}>
-        {project?.name}
-        {dirty && <span title="Unsaved changes"> •</span>}
+      <div className="flex min-w-0 items-center text-xs text-muted-foreground">
+        <input
+          value={project?.name ?? ""}
+          onChange={(e) =>
+            editProject((d) => {
+              d.name = e.target.value;
+            }, "name")
+          }
+          aria-label="Project name"
+          title="Project name (click to rename)"
+          spellCheck={false}
+          className="field-sizing-content h-6 max-w-80 min-w-16 truncate rounded-md border border-transparent bg-transparent px-1.5 outline-none hover:border-input focus:border-ring focus:text-foreground focus:ring-2 focus:ring-ring/30"
+        />
+        {dirty && <span title="Unsaved changes">•</span>}
       </div>
 
       <div className="ml-auto flex items-center gap-2">
         {status}
         {running && run.job ? (
-          <Button size="sm" variant="destructive" onClick={() => run.job && cancel.mutate(run.job)}>
+          <Button size="sm" variant="destructive" onClick={stop}>
             <HugeiconsIcon icon={StopIcon} data-icon="inline-start" />
             Stop
           </Button>

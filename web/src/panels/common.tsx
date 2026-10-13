@@ -1,7 +1,9 @@
 // Pieces shared by the view panels: stack info, section-plane controls, run status.
+import { useIsMutating } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { ApiError } from "@/api/client";
-import { type SectionParams, useCheck, useJob } from "@/api/hooks";
+import { toast } from "sonner";
+import { ApiError, errorMessages } from "@/api/client";
+import { FINISHED, type SectionParams, SUBMIT_RUN, useCancelJob, useCheck, useJob, useSubmitRun } from "@/api/hooks";
 import type { CheckResult, JobInfo, Polarization, RunSummary, SliceInfo } from "@/api/model";
 import { Segmented, SelectField, ToolbarItem } from "@/components/controls";
 import { NumberField } from "@/components/number-field";
@@ -165,6 +167,34 @@ export function useRunState() {
     stale: !!(done && check && info && info.project_digest !== check.digest),
     missing: !!job.error,
   };
+}
+
+/** Starting and stopping runs of the current project (the top bar and the setup panel). */
+export function useRunControl() {
+  const { project, errors } = useStack();
+  const run = useRunState();
+  const crosscheck = useSession((s) => s.crosscheck);
+  const setRun = useSession((s) => s.setRun);
+  const submit = useSubmitRun();
+  const cancel = useCancelJob();
+  const submitting = useIsMutating({ mutationKey: SUBMIT_RUN }) > 0;
+  const running = !!run.job && !FINISHED.has(run.job.status);
+  const canRun = errors.length === 0 && !running && !submitting;
+
+  const start = () => {
+    if (!canRun) return;
+    submit.mutate(
+      { project, crosscheck },
+      {
+        onSuccess: (job) => setRun(job.id),
+        onError: (error) => toast.error("Couldn't start the run", { description: errorMessages(error).join("; ") }),
+      },
+    );
+  };
+  const stop = () => {
+    if (run.job) cancel.mutate(run.job);
+  };
+  return { run, running, canRun, start, stop };
 }
 
 export function usePol(panel: "diffraction" | "nearfield", pols: Polarization[]): Polarization {

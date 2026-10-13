@@ -25,7 +25,7 @@ const PythonViewsPanel = lazy(() => import("@/panels/PythonViewsPanel").then((m)
 const LAYOUT_KEY = "masksim.layout.v1";
 
 export const PANELS: { id: string; title: string; component: FunctionComponent }[] = [
-  { id: "stack", title: "Stack", component: StackPanel },
+  { id: "stack", title: "Setup", component: StackPanel },
   { id: "geometry", title: "Geometry", component: GeometryPanel },
   { id: "dielectric", title: "Dielectric ε", component: DielectricPanel },
   { id: "diffraction", title: "Diffraction", component: DiffractionPanel },
@@ -47,7 +47,7 @@ const components = Object.fromEntries(
 
 function defaultLayout(api: DockviewApi) {
   api.clear();
-  api.addPanel({ id: "stack", component: "stack", title: "Stack" });
+  api.addPanel({ id: "stack", component: "stack", title: PANELS[0].title });
   let first = true;
   for (const panel of PANELS.slice(1)) {
     api.addPanel({
@@ -93,6 +93,8 @@ export function WorkspaceProvider({
       restored = false;
     }
     if (!restored) defaultLayout(dock);
+    // Saved layouts keep the titles they were saved with; show the current ones.
+    for (const p of PANELS) dock.getPanel(p.id)?.api.setTitle(p.title);
     dock.onDidLayoutChange(() => {
       try {
         localStorage.setItem(LAYOUT_KEY, JSON.stringify(dock.toJSON()));

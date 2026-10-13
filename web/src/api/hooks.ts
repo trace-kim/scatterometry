@@ -129,9 +129,13 @@ export function useJob(id: string | null) {
   });
 }
 
+/** Mutation key of run submissions, so every Run button sees a pending submit. */
+export const SUBMIT_RUN = ["submit-run"];
+
 export function useSubmitRun() {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: SUBMIT_RUN,
     mutationFn: (body: { project: Project; crosscheck: boolean }) => api.post<JobInfo>("/runs", body),
     onSuccess: (job) => client.setQueryData(["job", job.id], job),
   });

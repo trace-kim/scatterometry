@@ -1,6 +1,5 @@
 // Small compositions of the shadcn primitives used throughout the panels.
 import type { ReactNode } from "react";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
@@ -9,6 +8,9 @@ export interface Option<T extends string | number> {
   value: T;
   label: ReactNode;
   hint?: string;
+  disabled?: boolean;
+  /** Shown before the label in a select's list (not in the closed select). */
+  icon?: ReactNode;
 }
 
 export function SelectField<T extends string | number>({
@@ -39,7 +41,8 @@ export function SelectField<T extends string | number>({
       </SelectTrigger>
       <SelectContent>
         {options.map((o) => (
-          <SelectItem key={String(o.value)} value={o.value} title={o.hint}>
+          <SelectItem key={String(o.value)} value={o.value} title={o.hint} disabled={o.disabled}>
+            {o.icon}
             {o.label}
           </SelectItem>
         ))}
@@ -48,7 +51,7 @@ export function SelectField<T extends string | number>({
   );
 }
 
-/** Single-choice segmented control. */
+/** Single-choice segmented control: a recessed track with the chosen segment raised. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -68,14 +71,19 @@ export function Segmented<T extends string>({
       onValueChange={(next) => {
         if (next.length) onChange(next[0] as T);
       }}
-      variant="outline"
       size="sm"
-      spacing={0}
-      className={className}
+      spacing={0.5}
+      className={cn("rounded-md bg-muted p-0.5 dark:bg-input/30", className)}
       aria-label={ariaLabel}
     >
       {options.map((o) => (
-        <ToggleGroupItem key={o.value} value={o.value} title={o.hint} className="px-2 text-[11px]">
+        <ToggleGroupItem
+          key={o.value}
+          value={o.value}
+          title={o.hint}
+          disabled={o.disabled}
+          className="h-6 rounded-[5px] px-2 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:font-semibold aria-pressed:text-foreground aria-pressed:shadow-sm hover:aria-pressed:bg-background dark:aria-pressed:bg-input/80 dark:hover:aria-pressed:bg-input/80"
+        >
           {o.label}
         </ToggleGroupItem>
       ))}
@@ -83,8 +91,8 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Label/control row of a form grid. */
-export function FieldRow({
+/** Control with its label above it, for compact forms in narrow panels. */
+export function StackedField({
   label,
   hint,
   children,
@@ -96,12 +104,37 @@ export function FieldRow({
   className?: string;
 }) {
   return (
-    <div className={cn("grid grid-cols-[minmax(92px,38%)_1fr] items-center gap-2", className)}>
-      <Label className="truncate text-xs font-normal text-muted-foreground" title={hint}>
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
+      <span className="truncate text-[11px] font-medium text-muted-foreground" title={hint}>
         {label}
-      </Label>
+      </span>
       <div className="flex min-w-0 items-center gap-1.5">{children}</div>
     </div>
+  );
+}
+
+/** A line of guidance under a form: neutral, a warning, or a problem. */
+export function Note({
+  tone = "muted",
+  children,
+  className,
+}: {
+  tone?: "muted" | "warn" | "danger";
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        "text-[11px] leading-snug",
+        tone === "muted" && "text-muted-foreground",
+        tone === "warn" && "text-amber-700 dark:text-amber-400",
+        tone === "danger" && "text-destructive",
+        className,
+      )}
+    >
+      {children}
+    </p>
   );
 }
 

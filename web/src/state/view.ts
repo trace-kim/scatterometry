@@ -5,6 +5,7 @@ import type { Polarization } from "@/api/model";
 import type { Scale } from "@/lib/colorize";
 import type { ColormapName } from "@/lib/colormaps";
 import type { FieldQuantity } from "@/lib/field";
+import type { SetupSectionId } from "@/lib/stack";
 
 export interface SectionView {
   axis: "x" | "y";
@@ -17,6 +18,8 @@ export interface SectionView {
 }
 
 export interface ViewState {
+  /** Expanded sections of the setup panel (missing ids use SETUP_OPEN). */
+  setup: { open: Partial<Record<SetupSectionId, boolean>> };
   geometry: { section: SectionView; slice: number | null; show3d: boolean; cut: number; periods3d: number };
   dielectric: {
     section: SectionView;
@@ -25,7 +28,7 @@ export interface ViewState {
     colormap: ColormapName;
     slice: number | null;
   };
-  diffraction: { log: boolean; na: number; reduction: number; pol: Polarization | null };
+  diffraction: { log: boolean; na: number; reduction: number; pol: Polarization | null; pupilZoom: "full" | "na" };
   nearfield: {
     section: SectionView;
     pol: Polarization | null;
@@ -43,10 +46,19 @@ export interface ViewState {
 
 const section = (): SectionView => ({ axis: "x", offset: 0.5, periods: 2, zMin: null, zMax: null });
 
+export const SETUP_OPEN: Record<SetupSectionId, boolean> = {
+  stack: true,
+  pattern: true,
+  illumination: true,
+  accuracy: true,
+  materials: false,
+};
+
 const DEFAULTS: ViewState = {
+  setup: { open: {} },
   geometry: { section: section(), slice: null, show3d: true, cut: 1, periods3d: 2 },
   dielectric: { section: section(), part: "re", fourier: true, colormap: "viridis", slice: null },
-  diffraction: { log: true, na: 0.33, reduction: 4, pol: null },
+  diffraction: { log: true, na: 0.33, reduction: 4, pol: null, pupilZoom: "full" },
   nearfield: {
     section: section(),
     pol: null,

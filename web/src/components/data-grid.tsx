@@ -1,16 +1,10 @@
 // AG Grid (Community) themed from the CSS design tokens.
 import {
-  CellStyleModule,
-  CheckboxEditorModule,
-  ClientSideRowModelApiModule,
   ClientSideRowModelModule,
   ModuleRegistry,
   NumberEditorModule,
-  RowDragModule,
   RowSelectionModule,
-  SelectEditorModule,
   TextEditorModule,
-  TooltipModule,
   themeQuartz,
   ValidationModule,
 } from "ag-grid-community";
@@ -23,15 +17,9 @@ import { useDark } from "@/viz/theme";
 // validation module names any missing module in the console.
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
-  ClientSideRowModelApiModule,
   TextEditorModule,
   NumberEditorModule,
-  SelectEditorModule,
-  CheckboxEditorModule,
-  RowDragModule,
   RowSelectionModule,
-  CellStyleModule,
-  TooltipModule,
   ...(import.meta.env.DEV ? [ValidationModule] : []),
 ]);
 

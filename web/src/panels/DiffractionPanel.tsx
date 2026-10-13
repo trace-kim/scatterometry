@@ -3,11 +3,11 @@
 import { Download04Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ColDef } from "ag-grid-community";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { errorMessages } from "@/api/client";
 import { useOrders, usePupil } from "@/api/hooks";
 import type { OrderRow, Polarization, RunSummary } from "@/api/model";
-import { ToolbarItem } from "@/components/controls";
+import { Segmented, ToolbarItem } from "@/components/controls";
 import { DataGrid } from "@/components/data-grid";
 import { PanelLayout, Stat, ViewCard } from "@/components/layout";
 import { NumberField } from "@/components/number-field";
@@ -44,8 +44,7 @@ export function DiffractionPanel() {
   const te = useOrders(run.runId, run.done && run.pols.includes("TE"), "TE");
   const tm = useOrders(run.runId, run.done && run.pols.includes("TM"), "TM");
   const pupil = usePupil(run.runId, run.done, pol, view.na, view.reduction);
-  const pupilBox = useRef<HTMLDivElement>(null);
-  const pupilSize = useElementSize(pupilBox);
+  const [pupilBox, pupilSize] = useElementSize();
   const colors = useThemeColors();
 
   const current = (pol === "TE" ? te : tm).data?.orders ?? [];
@@ -94,6 +93,8 @@ export function DiffractionPanel() {
     };
   }, [byPol, pol, view.log]);
 
+  const zoomToNa = view.pupilZoom === "na" && !!pupil.data?.na_mask;
+
   const pupilOption = useMemo<EChartsOption>(() => {
     const p = pupil.data;
     const circle = (cx: number, cy: number, r: number) =>
@@ -102,6 +103,12 @@ export function DiffractionPanel() {
         cy + r * Math.sin((i / 90) * Math.PI),
       ]);
     const rMax = p ? Math.max(...p.R, 1e-30) : 1;
+    // The window is the whole unit circle, or the NA circle around the specular order.
+    const [cx, cy] = zoomToNa && p ? p.center : [0, 0];
+    const half = zoomToNa && p?.na_mask ? p.na_mask * 1.25 : 1.05;
+    const grid = squareGrid(pupilSize, { left: 56, right: 64, top: 12, bottom: 44 });
+    // Markers scale with the plot; zoomed in, the orders are far apart and can be larger.
+    const maxSymbol = Math.min(Math.max(grid.width * (zoomToNa ? 0.12 : 0.075), 14), 64);
     const series: object[] = [
       {
         type: "line",
@@ -125,13 +132,31 @@ export function DiffractionPanel() {
       type: "scatter",
       name: "orders",
       data: p ? p.sx.map((x, i) => [x, p.sy[i], p.R[i], p.phase_deg[i] ?? 0, p.m[i], p.n[i]]) : [],
-      symbolSize: (d: number[]) => 6 + 34 * Math.sqrt(Math.max(d[2], 0) / rMax),
+      symbolSize: (d: number[]) => 5 + (maxSymbol - 5) * Math.sqrt(Math.max(d[2], 0) / rMax),
       itemStyle: { borderColor: colors.foreground, borderWidth: 0.6 },
+      // Zoomed in, only a few orders are on screen: name them.
+      label: {
+        show: zoomToNa,
+        position: "right",
+        distance: 6,
+        color: colors.muted,
+        fontSize: 10,
+        formatter: (item: { data: number[] }) => `(${item.data[4]},${item.data[5]})`,
+      },
       z: 5,
+    });
+    const axis = (min: number, max: number, name: string, nameGap: number) => ({
+      type: "value",
+      min,
+      max,
+      name,
+      nameLocation: "middle",
+      nameGap,
+      axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (v: number) => fmt(v, 3) },
     });
     return {
       animation: false,
-      grid: squareGrid(pupilSize, { left: 48, right: 72, top: 14, bottom: 40 }),
+      grid,
       tooltip: {
         trigger: "item",
         formatter: (item: { seriesType: string; data: number[] }) =>
@@ -139,8 +164,8 @@ export function DiffractionPanel() {
             ? `order (${item.data[4]},${item.data[5]})<br/>R = ${fmt(item.data[2], 5)}<br/>phase = ${fixed(item.data[3], 1)}°`
             : "",
       },
-      xAxis: { type: "value", min: -1.05, max: 1.05, name: "kx / (k₀ n)", nameLocation: "middle", nameGap: 24 },
-      yAxis: { type: "value", min: -1.05, max: 1.05, name: "ky / (k₀ n)", nameLocation: "middle", nameGap: 30 },
+      xAxis: axis(cx - half, cx + half, "kx / (k₀ n)", 26),
+      yAxis: axis(cy - half, cy + half, "ky / (k₀ n)", 40),
       visualMap: {
         type: "continuous",
         seriesIndex: series.length - 1,
@@ -149,16 +174,17 @@ export function DiffractionPanel() {
         max: 180,
         calculable: false,
         orient: "vertical",
-        right: 4,
+        right: 8,
         top: "middle",
-        itemHeight: 140,
+        itemWidth: 12,
+        itemHeight: Math.max(grid.height * 0.5, 80),
         text: ["180°", "−180°"],
         textStyle: { color: colors.muted, fontSize: 10 },
         inRange: { color: colormapStops("twilight") },
       },
       series,
     };
-  }, [pupil.data, colors, view.na, view.reduction, pupilSize]);
+  }, [pupil.data, colors, view.na, view.reduction, pupilSize, zoomToNa]);
 
   const columns = useMemo<ColDef<OrderRow>[]>(
     () => [
@@ -241,11 +267,13 @@ export function DiffractionPanel() {
             />
           )}
         </div>
+        {/* The pupil card is square (as wide as its column, up to a cap); the bar chart
+            beside it stretches to the same height. */}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] gap-3">
           <ViewCard
             title="Reflected efficiency per order"
             subtitle="propagating orders"
-            className="h-[400px]"
+            className="min-h-[420px]"
             loading={te.isFetching || tm.isFetching}
             errors={te.error || tm.error ? errorMessages(te.error ?? tm.error) : undefined}
           >
@@ -254,9 +282,27 @@ export function DiffractionPanel() {
           <ViewCard
             title="Pupil"
             subtitle={`size ∝ √R, color = phase of the ${pupil.data?.basis ?? pol} component`}
-            className="h-[400px]"
+            className="aspect-square max-h-[760px] min-h-[420px]"
             loading={pupil.isFetching}
             errors={pupil.error ? errorMessages(pupil.error) : undefined}
+            actions={
+              <Segmented
+                aria-label="Pupil zoom"
+                value={zoomToNa ? "na" : "full"}
+                onChange={(pupilZoom) => setView("diffraction", { pupilZoom })}
+                options={[
+                  { value: "full", label: "Full", hint: "The whole pupil, up to grazing orders" },
+                  {
+                    value: "na",
+                    label: "NA",
+                    hint: pupil.data?.na_mask
+                      ? `Zoom to the mask-side NA circle (${fmt(pupil.data.na_mask, 3)})`
+                      : "Set a wafer NA to zoom to it",
+                    disabled: !pupil.data?.na_mask,
+                  },
+                ]}
+              />
+            }
           >
             <div ref={pupilBox} className="h-full w-full">
               <EChart option={pupilOption} />

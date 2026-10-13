@@ -168,7 +168,14 @@ python analyze_scatterometry.py                      # configured only by scatte
   - ECharts 6 for charts and 2D maps; three.js (@react-three/fiber, drei) for 3D.
   - dockview for the workspace and AG Grid Community for tables.
   - zustand + immer for state, TanStack Query for server data.
-- **Layout.** `src/api` (client, hooks, SSE, generated types), `src/state` (project store with patch undo, view settings, session), `src/lib` (npz, colormaps, colorize, field), `src/viz` (EChart, Heatmap, Stack3D, theme), `src/panels`, `src/workspace`. View panels and the 3D view load lazily, and vendor libraries split into chunks in `vite.config.ts`.
+- **Layout.** `src/api` (client, hooks, SSE, generated types), `src/state` (project store with patch undo, view settings, session), `src/lib` (npz, colormaps, colorize, field, stack), `src/viz` (EChart, Heatmap, Stack3D, theme), `src/panels`, `src/workspace`. View panels and the 3D view load lazily, and vendor libraries split into chunks in `vite.config.ts`.
+- **Setup panel** (dock id `stack`, titled "Setup"): `panels/StackPanel.tsx` with its sections in `panels/stack/`.
+  - Sections, in order: layer stack, pattern, illumination, accuracy, materials. Each header carries a live summary plus problem or warning badges; open/closed state lives in `state/view.ts` (`setup.open`).
+  - The footer runs the project through `useRunControl` (shared with the top bar) and lists blocking problems; clicking one opens its section.
+  - Pure logic is in `lib/stack.ts`, unit-tested in `lib/stack.test.ts`:
+    - repeat-group blocks (mirroring `masksim.stack._layer_blocks`), and layer moves that step over whole groups instead of splitting them
+    - propagating orders, in the solver's sign convention, and the minimum N that keeps them
+    - `problemSection`, which maps `masksim.stack.validate()` messages to sections by their wording. Add a case and a test there when adding or rewording a message.
 - **Data flow.**
   - Project store edits produce TanStack Query keys from `physicsKey(project)`; geometry and ε refetch as you type.
   - Results are keyed by run id and never refetched.
@@ -179,6 +186,7 @@ python analyze_scatterometry.py                      # configured only by scatte
   - **Design tokens** are OKLCH CSS variables (`src/index.css`). Canvas renderers get RGB through `viz/theme.ts`, which detects dark mode by watching the `<html>` class, because next-themes switches it after children render. AG Grid and dockview read the variables directly.
   - **AG Grid modules** are registered individually in `components/data-grid.tsx` (the full set is about 1.2 MB). A grid feature not yet used (filtering, CSV export, ...) needs its module added; development builds name missing modules in the console.
   - **Grid edits** use `readOnlyEdit` + `onCellEditRequest`, because rows come from an immer-frozen store.
+  - **Element sizes.** `useElementSize()` returns a callback ref. Panels render their charts only once data arrives, and a RefObject read in a mount effect never measured them; that left the pupil plot at its 10 px minimum.
   - **Undo.** `editProject(recipe, key)` collapses edits with the same key within 1.2 s into one undo step.
   - **Persistence.**
     - The project autosaves to localStorage, and saving to a file is an explicit action.

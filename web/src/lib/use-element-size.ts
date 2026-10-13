@@ -1,18 +1,25 @@
-import { type RefObject, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-/** Content-box size of an element, updated on resize. */
-export function useElementSize(ref: RefObject<HTMLElement | null>): { width: number; height: number } {
+/**
+ * Content-box size of an element, updated on resize. Attach the returned callback ref:
+ * unlike a RefObject read once in an effect, it also measures elements that mount after
+ * the component does (a chart that appears once its data has arrived).
+ */
+export function useElementSize<T extends HTMLElement = HTMLDivElement>(): [
+  (element: T | null) => void,
+  { width: number; height: number },
+] {
+  const [element, setElement] = useState<T | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!element) return;
     const observer = new ResizeObserver(([entry]) =>
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height }),
     );
-    observer.observe(el);
+    observer.observe(element);
     return () => observer.disconnect();
-  }, [ref]);
-  return size;
+  }, [element]);
+  return [setElement, size];
 }
 
 /** Grid placement giving a square plot area centred in a box with the given margins. */
