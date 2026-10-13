@@ -5,10 +5,13 @@ import time
 
 import numpy as np
 import pytest
+from conftest import load_npz, wait_done
 from fastapi.testclient import TestClient
 
 from maskserver import jobs
 from maskserver.app import create_app
+from maskserver.events import EventBroker
+from maskserver.routes import runs as runs_routes
 from maskserver.settings import Settings
 from masksim import preset_project
 
@@ -72,6 +75,31 @@ def test_oversized_bodies_are_refused(tight_client):
 
     assert tight_client.post("/api/project/normalize", content=chunks(), headers=headers).status_code == 413
     assert tight_client.get("/api/health").status_code == 200
+
+
+def test_field_sections_too_large_to_cache_are_computed_in_chunks(client, lines_project, monkeypatch):
+    run = client.post("/api/runs", json={"project": _doc(lines_project)}).json()
+    assert wait_done(client, "runs", run["id"])["status"] == "done"
+    url, params = f"/api/runs/{run['id']}/field/section", {"axis": "x", "n_z": 64, "n_lateral": 16}
+    cached = load_npz(client.get(url, params=params))
+    monkeypatch.setattr(runs_routes, "CACHE_BYTES", 0)
+    chunked = load_npz(client.get(url, params=params))
+    for c in ("Ex", "Ey", "Ez"):
+        np.testing.assert_allclose(chunked[c], cached[c], rtol=1e-5, atol=1e-6)
+
+
+def test_finished_results_are_dropped_beyond_the_byte_limit():
+    manager = jobs.JobManager(EventBroker(), max_workers=1, keep=10, keep_bytes=1)
+    project = preset_project("euv-lines")
+    project.numerics.nx = 2
+    try:
+        _first, second = manager.submit_run(project), manager.submit_run(project)
+        manager.wait(second.id, 60)
+        time.sleep(0.05)
+        assert second.result_bytes > 0
+        assert [j.id for j in manager.list()] == [second.id]  # the newest result always stays
+    finally:
+        manager.shutdown()
 
 
 def test_job_cache_is_bounded_by_bytes(monkeypatch):

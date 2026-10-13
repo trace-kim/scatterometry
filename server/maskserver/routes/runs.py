@@ -20,7 +20,7 @@ from ..deps import (
     run_solution,
     slice_infos,
 )
-from ..jobs import JobManager
+from ..jobs import CACHE_BYTES, JobManager
 from ..schemas import (
     AbsorptionResponse,
     FluxResponse,
@@ -110,7 +110,7 @@ def run_flux(run_id: str, jobs: Jobs, pol: Pol = None, z_min_nm: Optional[float]
     z1 = slices[-1].z_bottom + 20 * NM if z_max_nm is None else z_max_nm * NM
     z = np.linspace(z0, z1, n)
     interfaces = sorted({s.z_top for s in slices if z0 <= s.z_top <= z1 and (s.patterned or s.step == 0)})
-    return FluxResponse(pol=pol, z_nm=nm(z).tolist(), flux=sol.power_flux(z).tolist(),
+    return FluxResponse(pol=pol, z_nm=nm(z).tolist(), flux=views.power_flux(sol, z).tolist(),
                         interfaces_nm=[v / NM for v in interfaces])
 
 
@@ -146,8 +146,10 @@ def run_field_section(run_id: str, jobs: Jobs, params: Annotated[FieldSectionPar
     spec, slices = job.result.spec, job.result.slices
     lateral, z = views.section_axes(spec, params.axis, params.periods, params.z_min_nm * NM, params.z_max_nm * NM,
                                     params.n_lateral, params.n_z)
-    amplitudes = job.cached(("amplitudes", pol, params.z_min_nm, params.z_max_nm, params.n_z),
-                            lambda: sol.amplitudes(z))
+    amplitudes = None  # too large to keep: field_section then works through the depths in chunks
+    if views.amplitude_bytes(sol, z.size) <= CACHE_BYTES:
+        amplitudes = job.cached(("amplitudes", pol, params.z_min_nm, params.z_max_nm, params.n_z),
+                                lambda: sol.amplitudes(z))
     E = views.field_section(sol, params.axis, params.offset_nm * NM, lateral, z, amplitudes)
     index = views.section_index(spec, slices, params.axis, params.offset_nm * NM, lateral, z)
     return npz_response(Ex=as_complex64(E["x"]), Ey=as_complex64(E["y"]), Ez=as_complex64(E["z"]),

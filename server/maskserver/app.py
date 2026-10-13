@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
 
+import anyio.to_thread
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -71,11 +72,15 @@ class BodySizeLimit:
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings()
     broker = EventBroker()
-    jobs = JobManager(broker, max_workers=settings.max_jobs, keep=settings.keep_results)
+    jobs = JobManager(broker, max_workers=settings.max_jobs, keep=settings.keep_results,
+                      keep_bytes=int(settings.max_results_gb * 2**30))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.blas_limit = limit_blas_threads(settings.blas_threads)
+        # Sync endpoints run on AnyIO's thread pool (40 threads by default). Fewer threads
+        # cap how many large views are computed at once; further requests wait their turn.
+        anyio.to_thread.current_default_thread_limiter().total_tokens = settings.request_threads
         broker.bind(asyncio.get_running_loop())
         yield
         jobs.shutdown()

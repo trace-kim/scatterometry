@@ -234,19 +234,40 @@ def field_quantity(E: Dict[str, np.ndarray], quantity: str) -> np.ndarray:
     return np.abs(E[component]) if quantity.startswith("|") else E[component].real
 
 
+DEPTH_CHUNK = 256  # depths per amplitudes() call when the amplitudes are not kept
+
+
+def amplitude_bytes(solution, n_depths: int) -> int:
+    """Memory of solution.amplitudes() at n_depths depths: six complex128 arrays of (n_depths, Nh)."""
+    return 6 * 16 * n_depths * len(solution.Kx)
+
+
+def power_flux(solution, z: np.ndarray) -> np.ndarray:
+    """solution.power_flux(z), DEPTH_CHUNK depths at a time so memory stays bounded."""
+    z = np.atleast_1d(np.asarray(z, dtype=float))
+    return np.concatenate([solution.power_flux(z[i:i + DEPTH_CHUNK]) for i in range(0, z.size, DEPTH_CHUNK)])
+
+
 def field_section(solution, axis: str, offset: float, lateral: np.ndarray, z: np.ndarray,
                   amplitudes: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, np.ndarray]:
     """E components on a depth x lateral grid in the x-z (axis="x") or y-z plane.
 
     `amplitudes` may carry `solution.amplitudes(z)` from an earlier call; it is the
     expensive part, so moving the section sideways then only redoes the phase sums.
+    Without it, depths are evaluated DEPTH_CHUNK at a time so memory stays bounded.
     """
-    amp = solution.amplitudes(z) if amplitudes is None else amplitudes
     Kx, Ky = to_numpy(solution.Kx), to_numpy(solution.Ky)
     along, across = (Kx, Ky) if axis == "x" else (Ky, Kx)
     phase_lateral = np.exp(-1j * solution.k0 * np.outer(along, np.asarray(lateral, dtype=float)))
     phase_offset = np.exp(-1j * solution.k0 * across * offset)
-    return {c: (amp["s" + c] * phase_offset) @ phase_lateral for c in "xyz"}
+    if amplitudes is not None:
+        return {c: (amplitudes["s" + c] * phase_offset) @ phase_lateral for c in "xyz"}
+    out = {c: np.empty((len(z), len(lateral)), dtype=complex) for c in "xyz"}
+    for i in range(0, len(z), DEPTH_CHUNK):
+        amp = solution.amplitudes(z[i:i + DEPTH_CHUNK])
+        for c in "xyz":
+            out[c][i:i + DEPTH_CHUNK] = (amp["s" + c] * phase_offset) @ phase_lateral
+    return out
 
 
 def field_plane(solution, xs: np.ndarray, ys: np.ndarray, depth: float) -> Dict[str, np.ndarray]:
@@ -257,7 +278,8 @@ def field_plane(solution, xs: np.ndarray, ys: np.ndarray, depth: float) -> Dict[
 def absorption_by_layer(solution, slices: Sequence[Slice]) -> Dict[str, float]:
     """Absorbed fraction of the incident power, summed per named layer (repeats and steps merged)."""
     totals: Dict[str, float] = defaultdict(float)
-    for s, a in zip(slices, solution.layer_absorption(), strict=True):
+    absorbed = -np.diff(power_flux(solution, solution.z_interfaces)) if len(slices) else np.zeros(0)
+    for s, a in zip(slices, absorbed, strict=True):
         totals[s.layer_name] += float(a)
     return dict(totals)
 

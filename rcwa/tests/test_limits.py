@@ -71,6 +71,22 @@ def test_memory_estimate_tracks_the_measured_peak():
     assert 0.8 * peak < memory_estimate(spec) < 1.25 * peak
 
 
+def test_chunked_field_views_match_the_full_evaluation(monkeypatch):
+    spec = euv_lines()
+    result = solve_spec(replace(spec, numerics=replace(spec.numerics, nx=4)))
+    sol = next(iter(result.solutions.values()))
+    monkeypatch.setattr(views, "DEPTH_CHUNK", 7)
+    z = np.linspace(-20e-9, 120e-9, 30)
+    lateral = np.linspace(0.0, 100e-9, 11)
+    full = views.field_section(sol, "x", 5e-9, lateral, z, sol.amplitudes(z))
+    chunked = views.field_section(sol, "x", 5e-9, lateral, z)
+    for c in "xyz":
+        np.testing.assert_allclose(chunked[c], full[c], rtol=1e-12, atol=1e-14)
+    np.testing.assert_allclose(views.power_flux(sol, z), sol.power_flux(z), rtol=1e-12, atol=1e-14)
+    absorbed = views.absorption_by_layer(sol, result.slices)
+    assert sum(absorbed.values()) == pytest.approx(float(np.sum(sol.layer_absorption())), abs=1e-12)
+
+
 def test_fourier_plane_matches_pointwise_synthesis():
     spec = euv_contacts()
     slices = build_slices(spec)

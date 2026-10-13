@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Requests over these limits are refused (HTTP 422/413) rather than exhausting memory.
     max_solve_gb: float = 12.0  # estimated peak of one solve (masksim.memory_estimate)
     max_body_mb: float = 8.0    # request bodies; project documents are a few kB
+    # Finished runs' solutions are dropped oldest-first beyond this (the newest always stays).
+    max_results_gb: float = 4.0
+    request_threads: int = 8    # requests computed at once; bounds the memory of concurrent views
 
     @property
     def serves_web(self) -> bool:

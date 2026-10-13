@@ -17,7 +17,7 @@ import traceback
 import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
 from typing import Callable, List, Literal, Optional, Tuple
 
 from masksim import Project, RunResult, solve_spec, sweep_records
@@ -38,6 +38,26 @@ def _nbytes(value: object) -> int:
     """Array bytes in a cached value (an array or a dict of arrays)."""
     items = value.values() if isinstance(value, dict) else (value,)
     return sum(getattr(item, "nbytes", 0) for item in items)
+
+
+def _array_bytes(root: object) -> int:
+    """Bytes of the distinct arrays reachable from `root` through dataclasses, dicts, lists and tuples."""
+    seen, total, stack = set(), 0, [root]
+    while stack:
+        obj = stack.pop()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        nbytes = getattr(obj, "nbytes", None)
+        if isinstance(nbytes, int):
+            total += nbytes
+        elif isinstance(obj, dict):
+            stack.extend(obj.values())
+        elif isinstance(obj, (list, tuple)):
+            stack.extend(obj)
+        elif is_dataclass(obj) and not isinstance(obj, type) and hasattr(obj, "__dict__"):
+            stack.extend(vars(obj).values())  # includes attributes set after construction
+    return total
 
 
 class JobCancelled(Exception):
@@ -62,6 +82,7 @@ class Job:
     started: Optional[float] = None
     finished: Optional[float] = None
     result: Optional[RunResult] = None
+    result_bytes: int = 0  # arrays held by `result`, counted against the retention limit
     records: List[dict] = field(default_factory=list)
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
     last_emit: float = 0.0
@@ -111,12 +132,15 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, broker: EventBroker, max_workers: int = 1, keep: int = 6) -> None:
+    def __init__(self, broker: EventBroker, max_workers: int = 1, keep: int = 6,
+                 keep_bytes: Optional[int] = None) -> None:
+        """`keep` finished jobs are retained, fewer if their results exceed `keep_bytes`."""
         self._broker = broker
         self._executor = ThreadPoolExecutor(max_workers=max(1, max_workers), thread_name_prefix="solver")
         self._jobs: "OrderedDict[str, Job]" = OrderedDict()
         self._lock = threading.Lock()
         self._keep = max(1, keep)
+        self._keep_bytes = float("inf") if keep_bytes is None else keep_bytes
 
     # ---- public interface -------------------------------------------------------
 
@@ -206,6 +230,7 @@ class JobManager:
             self._finish(job, "failed", "Failed")
         else:
             job.progress = 1.0
+            job.result_bytes = _array_bytes(job.result) if job.result is not None else 0
             self._finish(job, "done", "Done")
 
     def _finish(self, job: Job, status: JobStatus, message: str) -> None:
@@ -229,10 +254,18 @@ class JobManager:
             self._broker.publish(dict(type="job", job=job.info()))
 
     def _prune(self) -> None:
+        """Forget the oldest finished jobs beyond `keep`, or while their results exceed `keep_bytes`.
+
+        The newest finished job always stays, so its results can still be viewed.
+        """
         with self._lock:
-            finished = [j for j in self._jobs.values() if j.is_finished]
-            for job in finished[: max(0, len(finished) - self._keep)]:
+            finished = sorted((j for j in self._jobs.values() if j.is_finished), key=lambda j: j.finished or 0.0)
+            count, total = len(finished), sum(j.result_bytes for j in finished)
+            for job in finished[:-1]:
+                if count <= self._keep and total <= self._keep_bytes:
+                    break
                 self._jobs.pop(job.id, None)
+                count, total = count - 1, total - job.result_bytes
 
 
 def _new_id() -> str:
