@@ -26,6 +26,7 @@ from .patterns import (
 )
 from .smatrix import SMatrix
 from .solver import RCWASolver
+from .nearfield import NearFieldSolver, NearFieldSolution
 from .utils import nk_to_eps
 from .fresnel import (
     FresnelLayer,
@@ -59,6 +60,8 @@ __all__ = [
     "SMatrix",
     # Solver
     "RCWASolver",
+    "NearFieldSolver",
+    "NearFieldSolution",
     # Utilities
     "nk_to_eps",
     # Fresnel/TMM

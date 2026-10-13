@@ -70,6 +70,9 @@ def _layer_eigenmodes(
       eig(Omega^2) -> W, lam2
       lam = sqrt(lam2) (diagonal)
       V = Q W lam^{-1}
+
+    Returns (W, V, lam), where lam is the 1D vector of eigenvalues (diagonal of LAM).
+    RCWASolver inlines the same computation; NearFieldSolver calls this function.
     """
     xp = get_array_module()
     Nh = Kx.size
@@ -109,7 +112,7 @@ def _layer_eigenmodes(
     VinvLam = _solve(Lam, xp.eye(2*Nh, dtype=xp.complex128))
     V = Q @ W @ VinvLam
 
-    return W, V
+    return W, V, lam
 
 
 def _layer_scattering_matrix(
