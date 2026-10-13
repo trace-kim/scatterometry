@@ -142,8 +142,13 @@ python analyze_scatterometry.py                      # configured only by scatte
 - **Jobs (`jobs.py`).**
   - A thread pool (`max_jobs`, default 1) runs them, and progress callbacks raise `JobCancelled` to cancel.
   - Finished jobs (the `keep_results` most recent) and their solutions live in memory only, so a server restart forgets them. The UI then clears its stale run and sweep ids.
-  - `Job.cached()` memoizes per-run derived data, such as field amplitudes per depth grid, which makes moving a section sideways cheap.
+  - `Job.cached()` memoizes per-run derived data, such as field amplitudes per depth grid, which makes moving a section sideways cheap. It keeps at most `CACHE_BYTES` (256 MB) per job.
   - Moving the work into worker processes would only touch this module.
+- **Resource limits.** No single request may exhaust the machine; it has no authentication and can be shared on the LAN.
+  - `masksim.validate` refuses specs over `MAX_SLICES`, `MAX_HARMONICS`, `MAX_GRID_SAMPLES` or `MAX_MATERIALS` (constants in `stack.py`). It works from counts (`slice_counts`) without expanding the stack. Every endpoint that takes a project validates it first.
+  - Runs and sweeps are refused when `masksim.memory_estimate` exceeds `MASKSIM_MAX_SOLVE_GB` (default 12, `--max-solve-gb`). The estimate is within a few percent of measured peaks. Sweeps validate every point up front.
+  - Request bodies over `MASKSIM_MAX_BODY_MB` (default 8) get HTTP 413.
+  - Keep the solver's memory model in `memory_estimate` in sync with `NearFieldSolver`, which holds one 2Nh×2Nh matrix per slice interface during the cascade.
 - **Arrays.** Array endpoints return uncompressed `.npz`: complex64 fields, uint8 material indices, and float64 axes in nm. GZip skips them, because float data barely compresses and gzip cost 50–150 ms per field plane. JSON responses are gzipped.
 - **Live events.** `GET /api/events` (SSE) emits `snapshot`, `job` (≤10 per second while running), and `sweep-records`.
 - **API models** live in `schemas.py`; all lengths are in nm.

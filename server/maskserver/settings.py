@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     keep_results: int = 6    # finished jobs kept in memory (2D solutions take tens of MB)
     web_dist: Optional[Path] = REPO_ROOT / "web" / "dist"  # built UI served at "/" when present
     cors_origins: List[str] = []
+    # Requests over these limits are refused (HTTP 422/413) rather than exhausting memory.
+    max_solve_gb: float = 12.0  # estimated peak of one solve (masksim.memory_estimate)
+    max_body_mb: float = 8.0    # request bodies; project documents are a few kB
 
     @property
     def serves_web(self) -> bool:

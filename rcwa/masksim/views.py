@@ -157,8 +157,11 @@ def exact_eps(s: Slice, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
     return p.eps_fill + p.host_fraction(X, Y) * (p.eps_host - p.eps_fill)
 
 
-def fourier_eps(spec: MaskSpec, slices: Sequence[Slice], s: Slice, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """eps(X, Y) rebuilt from the Fourier coefficients the solver's convolution matrix uses (|m| <= 2Nx, |n| <= 2Ny)."""
+def _fourier_terms(spec: MaskSpec, slices: Sequence[Slice], s: Slice):
+    """Fourier coefficients of eps that the solver's convolution matrix uses (|m| <= 2Nx, |n| <= 2Ny).
+
+    Returns (coefficients[n, m], m, n, Lx, Ly).
+    """
     lattice, settings = solver_settings(spec, list(slices))
     Lx, Ly = lattice.Lx, lattice.Ly
     gx, gy = settings.grid_Nx, settings.grid_Ny
@@ -166,10 +169,27 @@ def fourier_eps(spec: MaskSpec, slices: Sequence[Slice], s: Slice, X: np.ndarray
     coeffs = np.fft.fftshift(np.fft.fft2(to_numpy(s.pattern.eps_r(GX, GY)))) / (gx * gy)
     m = np.arange(-2 * settings.Nx, 2 * settings.Nx + 1)
     n = np.arange(-2 * settings.Ny, 2 * settings.Ny + 1)
-    sub = coeffs[gy // 2 + n[:, None], gx // 2 + m[None, :]]
+    return coeffs[gy // 2 + n[:, None], gx // 2 + m[None, :]], m, n, Lx, Ly
+
+
+def fourier_eps(spec: MaskSpec, slices: Sequence[Slice], s: Slice, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+    """eps at the points (X, Y), rebuilt from the truncated Fourier series the solver uses."""
+    sub, m, n, Lx, Ly = _fourier_terms(spec, slices, s)
     phase_x = np.exp(2j * np.pi * np.multiply.outer(m, X) / Lx)
     phase_y = np.exp(2j * np.pi * np.multiply.outer(n, Y) / Ly)
     return np.einsum("nm,m...,n...->...", sub, phase_x, phase_y)
+
+
+def fourier_eps_grid(spec: MaskSpec, slices: Sequence[Slice], s: Slice, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    """fourier_eps on the grid xs x ys, shape (len(ys), len(xs)).
+
+    The series separates per axis, so memory scales with harmonics x (len(xs) + len(ys))
+    rather than harmonics x pixels.
+    """
+    sub, m, n, Lx, Ly = _fourier_terms(spec, slices, s)
+    phase_x = np.exp(2j * np.pi * np.outer(m, xs) / Lx)
+    phase_y = np.exp(2j * np.pi * np.outer(n, ys) / Ly)
+    return phase_y.T @ sub @ phase_x
 
 
 def eps_section(spec: MaskSpec, slices: Sequence[Slice], axis: str, offset: float,
@@ -188,9 +208,10 @@ def eps_section(spec: MaskSpec, slices: Sequence[Slice], axis: str, offset: floa
 def eps_plane(spec: MaskSpec, slices: Sequence[Slice], s: Slice, xs: np.ndarray, ys: np.ndarray,
               fourier: bool) -> np.ndarray:
     """Complex permittivity of one slice on an x-y grid; shape (len(ys), len(xs))."""
+    if fourier and s.patterned:
+        return fourier_eps_grid(spec, slices, s, xs, ys)
     X, Y = np.meshgrid(xs, ys, indexing="xy")
-    values = fourier_eps(spec, slices, s, X, Y) if fourier and s.patterned else exact_eps(s, X, Y)
-    return np.broadcast_to(values, X.shape).astype(complex)
+    return np.broadcast_to(exact_eps(s, X, Y), X.shape).astype(complex)
 
 
 def convolution_matrix(spec: MaskSpec, slices: Sequence[Slice], s: Slice) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

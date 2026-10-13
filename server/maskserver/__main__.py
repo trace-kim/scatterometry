@@ -17,6 +17,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--port", type=int, help="port (default 8000)")
     parser.add_argument("--blas-threads", type=int, help="BLAS threads per solve (default 4)")
     parser.add_argument("--max-jobs", type=int, help="solver jobs running at once (default 1)")
+    parser.add_argument("--max-solve-gb", type=float, help="refuse solves estimated to need more memory (default 12)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the UI in a browser")
     parser.add_argument("--reload", action="store_true", help="restart on Python source changes (development)")
     args = parser.parse_args(argv)
@@ -24,7 +25,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # The app is built by uvicorn (possibly in a reloader subprocess), so options travel
     # as the MASKSIM_* environment variables that Settings reads.
     for name, value in (("HOST", args.host), ("PORT", args.port), ("BLAS_THREADS", args.blas_threads),
-                        ("MAX_JOBS", args.max_jobs)):
+                        ("MAX_JOBS", args.max_jobs), ("MAX_SOLVE_GB", args.max_solve_gb)):
         if value is not None:
             os.environ[f"MASKSIM_{name}"] = str(value)
     settings = Settings()

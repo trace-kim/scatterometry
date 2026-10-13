@@ -7,11 +7,13 @@ from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .arrays import NPZ_MEDIA_TYPE
 from .events import EventBroker
@@ -34,6 +36,36 @@ def limit_blas_threads(threads: int):
     except ImportError:
         return None
     return threadpool_limits(limits=threads, user_api="blas")
+
+
+class BodySizeLimit:
+    """Refuse request bodies over `max_bytes` with HTTP 413 before they are buffered in memory."""
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        declared = dict(scope["headers"]).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > self.max_bytes:
+            await JSONResponse({"detail": "request body too large"}, status_code=413)(scope, receive, send)
+            return
+        received = 0
+
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:  # chunked uploads declare no length
+                    # FastAPI re-raises HTTPExceptions from body reading as responses.
+                    raise HTTPException(status_code=413, detail="request body too large")
+            return message
+
+        await self.app(scope, limited_receive, send)
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -65,6 +97,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
                            allow_headers=["*"])
+    app.add_middleware(BodySizeLimit, max_bytes=int(settings.max_body_mb * 2**20))  # added last: outermost
 
     api = APIRouter(prefix="/api")
 

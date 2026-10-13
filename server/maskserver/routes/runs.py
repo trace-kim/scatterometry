@@ -9,7 +9,17 @@ from fastapi import APIRouter, Depends, Query, Response
 from masksim import NM, Project, views
 
 from ..arrays import NPZ_RESPONSES, as_complex64, as_index, nm, npz_response
-from ..deps import checked_spec, find_job, finished_run, get_jobs, pick_slice, run_solution, slice_infos
+from ..deps import (
+    AppSettings,
+    checked_spec,
+    find_job,
+    finished_run,
+    get_jobs,
+    pick_slice,
+    require_memory,
+    run_solution,
+    slice_infos,
+)
 from ..jobs import JobManager
 from ..schemas import (
     AbsorptionResponse,
@@ -36,8 +46,9 @@ class FieldSectionParams(SectionParams):
 
 
 @router.post("/runs", response_model=JobInfo, status_code=202)
-def submit_run(req: RunRequest, jobs: Jobs) -> dict:
-    checked_spec(req.project)
+def submit_run(req: RunRequest, jobs: Jobs, settings: AppSettings) -> dict:
+    spec, _ = checked_spec(req.project)
+    require_memory([spec], settings)
     return jobs.submit_run(req.project, crosscheck=req.crosscheck).info()
 
 

@@ -5,10 +5,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from masksim import sweep_parameters
+from masksim import sweep_parameters, validate, with_parameter
 from masksim.views import sweep_values
 
-from ..deps import checked_spec, find_job, get_jobs
+from ..deps import AppSettings, checked_spec, find_job, get_jobs, require_memory
 from ..jobs import JobManager
 from ..schemas import JobInfo, SweepRecord, SweepRequest, SweepResult
 
@@ -17,12 +17,24 @@ Jobs = Annotated[JobManager, Depends(get_jobs)]
 
 
 @router.post("/sweeps", response_model=JobInfo, status_code=202)
-def submit_sweep(req: SweepRequest, jobs: Jobs) -> dict:
-    """Start a sweep; records also arrive live as `sweep-records` events on /api/events."""
+def submit_sweep(req: SweepRequest, jobs: Jobs, settings: AppSettings) -> dict:
+    """Start a sweep; records also arrive live as `sweep-records` events on /api/events.
+
+    Every point is validated up front (a harmonics sweep must respect the same limits as a run).
+    """
     spec, _ = checked_spec(req.project)
-    if req.parameter not in sweep_parameters(spec):
+    labels = sweep_parameters(spec)
+    if req.parameter not in labels:
         raise HTTPException(status_code=422, detail={"errors": [f"cannot sweep {req.parameter!r} for this project"]})
     values = sweep_values(req.parameter, req.start, req.stop, req.points)
+    points = [with_parameter(spec, req.parameter, value) for value in values]
+    for value, point in zip(values, points, strict=True):
+        errors = validate(point)
+        if errors:
+            raise HTTPException(status_code=422, detail={"errors": [
+                f"{labels[req.parameter]} = {value:g}: {error}" for error in errors
+            ]})
+    require_memory(points, settings)
     return jobs.submit_sweep(req.project, req.parameter, values).info()
 
 

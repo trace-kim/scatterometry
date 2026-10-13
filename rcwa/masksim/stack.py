@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from rcwa import (
     ExternalRegion,
@@ -22,6 +22,14 @@ from rcwa import (
 from .geometry import HoleArrayPattern, LineSpacePattern, MaskPattern, UniformPattern
 
 NM = 1e-9
+
+# Size limits checked by validate(), so that one request to maskserver cannot exhaust
+# memory or CPU. They sit far above real masks: an EUV multilayer stack is ~90 slices,
+# and the presets use at most 121 harmonics.
+MAX_SLICES = 1000
+MAX_HARMONICS = 2601        # (2Nx+1)(2Ny+1) as the solver uses them, e.g. Nx = Ny = 25
+MAX_GRID_SAMPLES = 2 ** 20  # real-space samples per slice for the Fourier transform
+MAX_MATERIALS = 256         # maskserver sends material indices as uint8
 
 PATTERN_KINDS: Dict[str, str] = {
     "none": "Unpatterned (blank)",
@@ -145,19 +153,25 @@ def unit_cell(pattern: PatternSpec) -> Tuple[float, float]:
     return pattern.pitch_x, pattern.pitch_x
 
 
-def expand_layers(spec: MaskSpec) -> List[LayerSpec]:
-    """Unroll repeat groups: each run of contiguous rows sharing a group name repeats as a block."""
+def _layer_blocks(spec: MaskSpec) -> Iterator[Tuple[Tuple[LayerSpec, ...], int]]:
+    """Runs of contiguous rows sharing a repeat group, each with its repeat count (1 when ungrouped)."""
     counts = dict(spec.repeats)
-    rows = list(spec.layers)
-    out: List[LayerSpec] = []
+    rows = tuple(spec.layers)
     i = 0
     while i < len(rows):
         group = rows[i].group.strip()
         j = i + 1
         while group and j < len(rows) and rows[j].group.strip() == group:
             j += 1
-        out.extend(rows[i:j] * (max(1, int(counts.get(group, 1))) if group else 1))
+        yield rows[i:j], (max(1, int(counts.get(group, 1))) if group else 1)
         i = j
+
+
+def expand_layers(spec: MaskSpec) -> List[LayerSpec]:
+    """Unroll repeat groups: each run of contiguous rows sharing a group name repeats as a block."""
+    out: List[LayerSpec] = []
+    for block, count in _layer_blocks(spec):
+        out.extend(block * count)
     return out
 
 
@@ -168,6 +182,29 @@ def sidewall_slope(swa_deg: float) -> float:
     if abs(swa_deg - 90.0) < 1e-9:
         return 0.0
     return 2.0 / math.tan(math.radians(swa_deg))
+
+
+def _steps(layer: LayerSpec, patterned: bool) -> int:
+    """How many slices build_slices cuts `layer` into (`patterned`: the spec has a pattern)."""
+    if patterned and layer.patterned and sidewall_slope(layer.swa_deg) != 0.0:
+        return max(1, int(layer.steps))
+    return 1
+
+
+def slice_counts(spec: MaskSpec) -> Tuple[int, int]:
+    """(all, patterned) slice counts of build_slices(spec), computed without expanding the stack.
+
+    Needs valid sidewall angles, which validate() checks before calling it.
+    """
+    patterned = spec.pattern.kind != "none"
+    total = cut = 0
+    for block, count in _layer_blocks(spec):
+        for layer in block:
+            n = count * _steps(layer, patterned)
+            total += n
+            if patterned and layer.patterned:
+                cut += n
+    return total, cut
 
 
 def _make_pattern(pat: PatternSpec, eps_host: complex, eps_fill: complex, cd_x: float, cd_y: float) -> MaskPattern:
@@ -215,7 +252,7 @@ def build_slices(spec: MaskSpec) -> List[Slice]:
     for layer in layers:
         eps_host = spec.material(layer.material).eps
         if patterned and layer.patterned:
-            n = max(1, int(layer.steps)) if sidewall_slope(layer.swa_deg) != 0.0 else 1
+            n = _steps(layer, patterned)
             dt = layer.thickness / n
             for j in range(n):
                 delta = sign * (growth(zeta + (j + 0.5) * dt) - growth(zeta_ref))
@@ -233,10 +270,15 @@ def build_slices(spec: MaskSpec) -> List[Slice]:
     return slices
 
 
-def solver_settings(spec: MaskSpec, slices: List[Slice]) -> Tuple[Lattice, RCWASettings]:
+def solver_settings(spec: MaskSpec, slices: Optional[Sequence[Slice]] = None) -> Tuple[Lattice, RCWASettings]:
+    """Unit cell and truncation for the solver; works from the spec alone when `slices` is omitted."""
     pat, num = spec.pattern, spec.numerics
     Lx, Ly = unit_cell(pat)
-    if not any(s.patterned for s in slices):
+    if slices is None:
+        patterned = pat.kind != "none" and any(layer.patterned for layer in spec.layers)
+    else:
+        patterned = any(s.patterned for s in slices)
+    if not patterned:
         nx = ny = 0
     elif pat.kind == "ls_v":
         nx, ny = num.nx, 0
@@ -302,6 +344,28 @@ def validate(spec: MaskSpec) -> List[str]:
         errors.append("Wavelength must be positive.")
     if not 0.0 <= spec.illumination.theta_deg < 90.0:
         errors.append("Angle of incidence must be in [0, 90) deg.")
+    if len(spec.materials) > MAX_MATERIALS:
+        errors.append(f"At most {MAX_MATERIALS} materials are supported.")
+    num = spec.numerics
+    if num.nx < 0 or num.ny < 0:
+        errors.append("Harmonic orders must be non-negative.")
+    if num.grid < 0:
+        errors.append("Grid must be 0 (automatic) or a positive sample count.")
+    if errors:
+        return errors
+
+    # Size limits, computed from counts alone so that absurd inputs fail fast.
+    slices, _ = slice_counts(spec)
+    if slices > MAX_SLICES:
+        errors.append(f"The stack expands to {slices:,} slices; at most {MAX_SLICES:,} are supported. "
+                      "Reduce repeat counts or sidewall steps.")
+    _, settings = solver_settings(spec)
+    harmonics = (2 * settings.Nx + 1) * (2 * settings.Ny + 1)
+    if harmonics > MAX_HARMONICS:
+        errors.append(f"{harmonics:,} harmonics; at most {MAX_HARMONICS:,} are supported. Reduce Nx/Ny.")
+    samples = settings.grid_Nx * settings.grid_Ny
+    if samples > MAX_GRID_SAMPLES:
+        errors.append(f"The sampling grid has {samples:,} points; at most {MAX_GRID_SAMPLES:,} are supported.")
     return errors
 
 

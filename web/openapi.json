@@ -1291,7 +1291,7 @@
           "sweeps"
         ],
         "summary": "Submit Sweep",
-        "description": "Start a sweep; records also arrive live as `sweep-records` events on /api/events.",
+        "description": "Start a sweep; records also arrive live as `sweep-records` events on /api/events.\n\nEvery point is validated up front (a harmonics sweep must respect the same limits as a run).",
         "operationId": "submit_sweep_api_sweeps_post",
         "requestBody": {
           "content": {

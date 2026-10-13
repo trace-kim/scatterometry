@@ -1,19 +1,37 @@
 """Shared request helpers: job lookup, project checks, slice summaries."""
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Annotated, Iterable, List, Optional, Tuple
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
-from masksim import NM, MaskSpec, Project, Slice, build_slices, validate
+from masksim import NM, MaskSpec, Project, Slice, build_slices, memory_estimate, validate
 from rcwa import NearFieldSolution
 
 from .jobs import Job, JobManager, JobNotFound
 from .schemas import SliceInfo
+from .settings import Settings
 
 
 def get_jobs(request: Request) -> JobManager:
     return request.app.state.jobs
+
+
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+AppSettings = Annotated[Settings, Depends(get_settings)]
+
+
+def require_memory(specs: Iterable[MaskSpec], settings: Settings) -> None:
+    """HTTP 422 if solving any of the (valid) `specs` would need more than MASKSIM_MAX_SOLVE_GB."""
+    need = max(memory_estimate(spec) for spec in specs)
+    if need > settings.max_solve_gb * 2**30:
+        raise HTTPException(status_code=422, detail={"errors": [
+            f"This solve needs about {need / 2**30:.1f} GB of memory; the server allows {settings.max_solve_gb:g} GB "
+            "(MASKSIM_MAX_SOLVE_GB). Reduce the harmonics or the number of slices."
+        ]})
 
 
 def checked_spec(project: Project) -> Tuple[MaskSpec, List[Slice]]:

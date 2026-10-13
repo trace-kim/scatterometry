@@ -18,7 +18,7 @@ import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Literal, Optional, Tuple
 
 from masksim import Project, RunResult, solve_spec, sweep_records
 
@@ -29,6 +29,15 @@ log = logging.getLogger("maskserver.jobs")
 JobKind = Literal["run", "sweep"]
 JobStatus = Literal["queued", "running", "done", "failed", "cancelled"]
 FINISHED = ("done", "failed", "cancelled")
+# Derived data kept per finished job. The UI's field views need a few MB; one amplitude
+# grid at the largest allowed request size can reach a GB, and that is not kept.
+CACHE_BYTES = 256 * 2**20
+
+
+def _nbytes(value: object) -> int:
+    """Array bytes in a cached value (an array or a dict of arrays)."""
+    items = value.values() if isinstance(value, dict) else (value,)
+    return sum(getattr(item, "nbytes", 0) for item in items)
 
 
 class JobCancelled(Exception):
@@ -57,7 +66,7 @@ class Job:
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
     last_emit: float = 0.0
     digest: str = ""
-    cache: "OrderedDict[tuple, object]" = field(default_factory=OrderedDict, repr=False)
+    cache: "OrderedDict[tuple, Tuple[object, int]]" = field(default_factory=OrderedDict, repr=False)  # value, bytes
     cache_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def __post_init__(self) -> None:
@@ -66,17 +75,20 @@ class Job:
     def cached(self, key: tuple, compute: Callable[[], object], size: int = 8) -> object:
         """Memoize derived data of a finished job (e.g. field amplitudes on a depth grid).
 
-        Requests run on a thread pool; the lock also stops two of them computing the
-        same entry at once.
+        Keeps at most `size` entries and CACHE_BYTES of arrays; a larger entry is
+        returned without being kept. Requests run on a thread pool; the lock also stops
+        two of them computing the same entry at once.
         """
         with self.cache_lock:
             if key in self.cache:
                 self.cache.move_to_end(key)
-                return self.cache[key]
+                return self.cache[key][0]
             value = compute()
-            self.cache[key] = value
-            while len(self.cache) > size:
-                self.cache.popitem(last=False)
+            nbytes = _nbytes(value)
+            if nbytes <= CACHE_BYTES:
+                self.cache[key] = (value, nbytes)
+                while len(self.cache) > size or sum(n for _, n in self.cache.values()) > CACHE_BYTES:
+                    self.cache.popitem(last=False)
             return value
 
     @property
