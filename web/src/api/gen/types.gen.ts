@@ -349,6 +349,138 @@ export type MaterialDoc = {
 };
 
 /**
+ * MeasurementInfo
+ */
+export type MeasurementInfo = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Format
+     */
+    format: 'spe';
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+    /**
+     * Created
+     */
+    created: number;
+    /**
+     * Dtype
+     */
+    dtype: string;
+    /**
+     * Frames
+     */
+    frames: number;
+    /**
+     * Regions
+     */
+    regions: Array<MeasurementRegion>;
+    /**
+     * Sensor
+     */
+    sensor?: Array<number> | null;
+    /**
+     * Summary
+     */
+    summary?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+    /**
+     * Timestamp Events
+     */
+    timestamp_events?: Array<string>;
+    /**
+     * Setting Count
+     */
+    setting_count: number;
+};
+
+/**
+ * MeasurementRegion
+ *
+ * A region of interest; x, y (0-based sensor pixels) and binning locate it on the sensor.
+ */
+export type MeasurementRegion = {
+    /**
+     * Index
+     */
+    index: number;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+    /**
+     * X Binning
+     */
+    x_binning: number;
+    /**
+     * Y Binning
+     */
+    y_binning: number;
+};
+
+/**
+ * MeasurementTrace
+ *
+ * Per-frame statistics of one region; `time_s` is the first time stamp event, relative to frame 0.
+ */
+export type MeasurementTrace = {
+    /**
+     * Region
+     */
+    region: number;
+    /**
+     * Frame
+     */
+    frame: Array<number>;
+    /**
+     * Total
+     */
+    total: Array<number>;
+    /**
+     * Max
+     */
+    max: Array<number>;
+    /**
+     * Time S
+     */
+    time_s?: Array<number> | null;
+    /**
+     * Frame Numbers
+     */
+    frame_numbers?: Array<number> | null;
+};
+
+/**
  * ModesResponse
  */
 export type ModesResponse = {
@@ -731,6 +863,20 @@ export type SectionRequest = {
      */
     n_z?: number;
     project: Project;
+};
+
+/**
+ * SettingRow
+ */
+export type SettingRow = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Value
+     */
+    value: string;
 };
 
 /**
@@ -1913,3 +2059,221 @@ export type EvaluatePythonViewApiPythonViewsViewIdPostResponses = {
 };
 
 export type EvaluatePythonViewApiPythonViewsViewIdPostResponse = EvaluatePythonViewApiPythonViewsViewIdPostResponses[keyof EvaluatePythonViewApiPythonViewsViewIdPostResponses];
+
+export type ListMeasurementsApiMeasurementsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/measurements';
+};
+
+export type ListMeasurementsApiMeasurementsGetResponses = {
+    /**
+     * Response List Measurements Api Measurements Get
+     *
+     * Successful Response
+     */
+    200: Array<MeasurementInfo>;
+};
+
+export type ListMeasurementsApiMeasurementsGetResponse = ListMeasurementsApiMeasurementsGetResponses[keyof ListMeasurementsApiMeasurementsGetResponses];
+
+export type UploadMeasurementApiMeasurementsPostData = {
+    body: Blob | File;
+    path?: never;
+    query?: {
+        /**
+         * Name
+         */
+        name?: string;
+    };
+    url: '/api/measurements';
+};
+
+export type UploadMeasurementApiMeasurementsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UploadMeasurementApiMeasurementsPostError = UploadMeasurementApiMeasurementsPostErrors[keyof UploadMeasurementApiMeasurementsPostErrors];
+
+export type UploadMeasurementApiMeasurementsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MeasurementInfo;
+};
+
+export type UploadMeasurementApiMeasurementsPostResponse = UploadMeasurementApiMeasurementsPostResponses[keyof UploadMeasurementApiMeasurementsPostResponses];
+
+export type DeleteMeasurementApiMeasurementsMeasurementIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Measurement Id
+         */
+        measurement_id: string;
+    };
+    query?: never;
+    url: '/api/measurements/{measurement_id}';
+};
+
+export type DeleteMeasurementApiMeasurementsMeasurementIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteMeasurementApiMeasurementsMeasurementIdDeleteError = DeleteMeasurementApiMeasurementsMeasurementIdDeleteErrors[keyof DeleteMeasurementApiMeasurementsMeasurementIdDeleteErrors];
+
+export type DeleteMeasurementApiMeasurementsMeasurementIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteMeasurementApiMeasurementsMeasurementIdDeleteResponse = DeleteMeasurementApiMeasurementsMeasurementIdDeleteResponses[keyof DeleteMeasurementApiMeasurementsMeasurementIdDeleteResponses];
+
+export type GetMeasurementApiMeasurementsMeasurementIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Measurement Id
+         */
+        measurement_id: string;
+    };
+    query?: never;
+    url: '/api/measurements/{measurement_id}';
+};
+
+export type GetMeasurementApiMeasurementsMeasurementIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMeasurementApiMeasurementsMeasurementIdGetError = GetMeasurementApiMeasurementsMeasurementIdGetErrors[keyof GetMeasurementApiMeasurementsMeasurementIdGetErrors];
+
+export type GetMeasurementApiMeasurementsMeasurementIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MeasurementInfo;
+};
+
+export type GetMeasurementApiMeasurementsMeasurementIdGetResponse = GetMeasurementApiMeasurementsMeasurementIdGetResponses[keyof GetMeasurementApiMeasurementsMeasurementIdGetResponses];
+
+export type MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Measurement Id
+         */
+        measurement_id: string;
+    };
+    query?: never;
+    url: '/api/measurements/{measurement_id}/settings';
+};
+
+export type MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetError = MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetErrors[keyof MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetErrors];
+
+export type MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetResponses = {
+    /**
+     * Response Measurement Settings Api Measurements  Measurement Id  Settings Get
+     *
+     * Successful Response
+     */
+    200: Array<SettingRow>;
+};
+
+export type MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetResponse = MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetResponses[keyof MeasurementSettingsApiMeasurementsMeasurementIdSettingsGetResponses];
+
+export type MeasurementFrameApiMeasurementsMeasurementIdFrameGetData = {
+    body?: never;
+    path: {
+        /**
+         * Measurement Id
+         */
+        measurement_id: string;
+    };
+    query?: {
+        /**
+         * Region
+         */
+        region?: number;
+        /**
+         * Index
+         */
+        index?: number;
+        /**
+         * Average
+         */
+        average?: boolean;
+    };
+    url: '/api/measurements/{measurement_id}/frame';
+};
+
+export type MeasurementFrameApiMeasurementsMeasurementIdFrameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MeasurementFrameApiMeasurementsMeasurementIdFrameGetError = MeasurementFrameApiMeasurementsMeasurementIdFrameGetErrors[keyof MeasurementFrameApiMeasurementsMeasurementIdFrameGetErrors];
+
+export type MeasurementFrameApiMeasurementsMeasurementIdFrameGetResponses = {
+    /**
+     * NumPy .npz archive
+     */
+    200: Blob | File;
+};
+
+export type MeasurementFrameApiMeasurementsMeasurementIdFrameGetResponse = MeasurementFrameApiMeasurementsMeasurementIdFrameGetResponses[keyof MeasurementFrameApiMeasurementsMeasurementIdFrameGetResponses];
+
+export type MeasurementTraceApiMeasurementsMeasurementIdTraceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Measurement Id
+         */
+        measurement_id: string;
+    };
+    query?: {
+        /**
+         * Region
+         */
+        region?: number;
+    };
+    url: '/api/measurements/{measurement_id}/trace';
+};
+
+export type MeasurementTraceApiMeasurementsMeasurementIdTraceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MeasurementTraceApiMeasurementsMeasurementIdTraceGetError = MeasurementTraceApiMeasurementsMeasurementIdTraceGetErrors[keyof MeasurementTraceApiMeasurementsMeasurementIdTraceGetErrors];
+
+export type MeasurementTraceApiMeasurementsMeasurementIdTraceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MeasurementTrace;
+};
+
+export type MeasurementTraceApiMeasurementsMeasurementIdTraceGetResponse = MeasurementTraceApiMeasurementsMeasurementIdTraceGetResponses[keyof MeasurementTraceApiMeasurementsMeasurementIdTraceGetResponses];

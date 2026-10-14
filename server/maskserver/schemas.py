@@ -231,3 +231,49 @@ class ModesResponse(BaseModel):
     label: str
     kz_re: List[float]
     kz_im: List[float]
+
+
+# ---- measurements ---------------------------------------------------------------------------
+
+
+class MeasurementRegion(BaseModel):
+    """A region of interest; x, y (0-based sensor pixels) and binning locate it on the sensor."""
+    index: int
+    width: int
+    height: int
+    x: int
+    y: int
+    x_binning: int
+    y_binning: int
+
+
+class MeasurementInfo(BaseModel):
+    id: str
+    name: str
+    format: Literal["spe"]
+    version: float
+    size_bytes: int
+    created: float
+    dtype: str
+    frames: int
+    regions: List[MeasurementRegion]
+    sensor: Optional[List[int]] = None
+    summary: Dict[str, Any] = {}
+    warnings: List[str] = []
+    timestamp_events: List[str] = []
+    setting_count: int
+
+
+class SettingRow(BaseModel):
+    path: str
+    value: str
+
+
+class MeasurementTrace(BaseModel):
+    """Per-frame statistics of one region; `time_s` is the first time stamp event, relative to frame 0."""
+    region: int
+    frame: List[int]
+    total: List[float]
+    max: List[float]
+    time_s: Optional[List[float]] = None
+    frame_numbers: Optional[List[int]] = None

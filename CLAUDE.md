@@ -15,6 +15,7 @@ The repository holds EUV-photomask scatterometry tooling and a web-based mask si
   - `views.py`: the numbers behind every UI view.
   - `runner.py`: solve and sweep orchestration with progress reporting.
   - `plots.py`: Plotly figures for notebooks.
+  - `spe.py`: reader (and test writer) for Princeton Instruments SPE camera files; NumPy only.
 - **`server/maskserver/`**: FastAPI backend for the web UI (jobs, array endpoints, live events). It also serves the built UI.
 - **`web/`**: React/TypeScript UI. Its stack and the reasons behind it are in `docs/adr/0001-ui-stack.md`.
 - **Scripts in `rcwa/`**:
@@ -160,6 +161,7 @@ python analyze_scatterometry.py                      # configured only by scatte
   - `/api/project/check` returns domain problems in `errors`, so the editor can show them while typing.
   - View endpoints answer an invalid project with 422 `{detail: {errors: [...]}}`.
   - `/api/project/normalize` fills defaults and upgrades every opened file.
+- **Measurements (`measurements.py`, `routes/measurements.py`).** `POST /api/measurements?name=` takes an SPE file as the raw body (no multipart), up to `MASKSIM_MAX_UPLOAD_MB` (default 1024; `BodySizeLimit` has a per-path limit for it). Files stay in memory, oldest dropped beyond `MASKSIM_MAX_MEASUREMENTS_GB` (default 4). Frames go out as `.npz` in the file's own pixel type (`u2`/`u4` are supported by `lib/npz.ts`), with axes in sensor pixels.
 - **Python views (`python_views.py`).** `@python_view(id, title, needs="project"|"run")` functions return an ECharts option dict. They appear in the UI's "Python views" panel, so a new plot needs no TypeScript.
 
 ## Web UI (`web/`)
@@ -196,6 +198,14 @@ python analyze_scatterometry.py                      # configured only by scatte
     - View settings persist in localStorage (`state/view.ts`; a shallow merge gives new fields their defaults).
     - Run and sweep ids live in sessionStorage.
   - **Generated files** (`src/api/gen`, `openapi.json`) come from `pnpm api:gen`; never edit them by hand.
+
+## SPE camera files (`masksim/spe.py`)
+
+- A 4100-byte header, then the frames; version 3.0 (LightField) adds an XML footer at the uint64 offset 678. When the footer exists it decides the layout: there may be several regions per frame, and per-frame metadata (time stamps, frame tracking numbers) makes the frame `stride` larger than its `size`. Readers that assume back-to-back frames (imageio, for example) go wrong on those files.
+- Old WinView files leave the 0x5555 end mark at offset 4098 as 0. They are recognised by the WinView id at offset 2996, and their ROIs are 1-based.
+- The frame count in the header can be wrong. It is clamped to the data actually present, with a warning.
+- `pixel_axes()` gives pixel centres in sensor pixels (sensor pixel k is centred at k), so binned pixels land at half-integers.
+- A footer that contains a DTD is refused (no entity expansion). The web viewer is `panels/MeasurementPanel.tsx`, with its pure logic in `lib/measurement.ts`. `web/e2e/fixtures/ccd-demo.spe` is a 3-frame file written by `write_spe`.
 
 ## Scatterometry image pipeline
 

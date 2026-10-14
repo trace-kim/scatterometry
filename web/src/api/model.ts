@@ -38,6 +38,10 @@ export type SweepRecord = gen.SweepRecord;
 export type SweepResult = gen.SweepResult;
 export type PythonViewInfo = gen.PythonViewInfo;
 export type PythonViewResult = gen.PythonViewResult;
+export type MeasurementInfo = Complete<gen.MeasurementInfo>;
+export type MeasurementRegion = gen.MeasurementRegion;
+export type MeasurementTrace = gen.MeasurementTrace;
+export type SettingRow = gen.SettingRow;
 
 export interface RunSummary {
   elapsed: number;

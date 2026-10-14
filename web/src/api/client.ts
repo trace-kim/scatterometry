@@ -63,7 +63,18 @@ export const api = {
     return (await send("POST", path, { body, signal })).json();
   },
   async del<T>(path: string): Promise<T> {
-    return (await send("DELETE", path)).json();
+    const response = await send("DELETE", path);
+    return (response.status === 204 ? undefined : await response.json()) as T;
+  },
+  /** POST a file as the raw request body (measurement uploads). */
+  async upload<T>(path: string, file: Blob, query?: Query): Promise<T> {
+    const response = await fetch(url(path, query), {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: file,
+    });
+    if (!response.ok) throw await toError(response);
+    return response.json();
   },
   async getArrays(path: string, query?: Query, signal?: AbortSignal): Promise<Arrays> {
     return parseNpz(await (await send("GET", path, { query, signal })).arrayBuffer());

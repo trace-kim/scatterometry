@@ -41,6 +41,10 @@ export interface HeatmapProps {
   /** Extra tooltip line for a pixel. */
   describe?: (x: number, y: number, index: number) => string | null;
   formatValue?: (value: number) => string;
+  /** Called with the pixel (column, row) under a click. */
+  onPick?: (column: number, row: number) => void;
+  /** Crosshair through this point (data coordinates). */
+  marker?: [number, number] | null;
   className?: string;
 }
 
@@ -74,6 +78,7 @@ export function Heatmap(props: HeatmapProps) {
     valueLabel,
     title,
     equalAspect = false,
+    marker,
     className,
   } = props;
   const colors = useThemeColors();
@@ -177,23 +182,48 @@ export function Heatmap(props: HeatmapProps) {
             };
           },
         },
+        ...(marker
+          ? [
+              {
+                type: "line",
+                silent: true,
+                data: [],
+                markLine: {
+                  silent: true,
+                  symbol: "none",
+                  animation: false,
+                  label: { show: false },
+                  lineStyle: { color: "#4fc3f7", width: 1, type: "dashed" },
+                  data: [{ xAxis: marker[0] }, { yAxis: marker[1] }],
+                },
+              },
+            ]
+          : []),
       ],
     }),
-    [canvas, grid, x0, x1, y0, y1, yDown, xLabel, yLabel, title],
+    [canvas, grid, x0, x1, y0, y1, yDown, xLabel, yLabel, title, marker],
   );
 
   const onInit = (chart: EChartsInstance) => {
     const zr = chart.getZr();
-    const move = (event: { offsetX: number; offsetY: number }) => {
+    /** The pixel under a mouse event: data coordinates and (column, row), or null outside the image. */
+    const locate = (event: { offsetX: number; offsetY: number }) => {
       const p = latest.current;
       const point = [event.offsetX, event.offsetY];
-      if (!chart.containPixel("grid", point)) return setTip(null);
+      if (!chart.containPixel("grid", point)) return null;
       const [xv, yv] = chart.convertFromPixel("grid", point) as number[];
       const [ax0, ax1] = edges(p.x);
       const [ay0, ay1] = edges(p.y);
       const i = Math.floor(((xv - ax0) / (ax1 - ax0)) * p.width);
       const j = Math.floor(((yv - ay0) / (ay1 - ay0)) * p.height);
-      if (i < 0 || j < 0 || i >= p.width || j >= p.height) return setTip(null);
+      if (i < 0 || j < 0 || i >= p.width || j >= p.height) return null;
+      return { xv, yv, i, j };
+    };
+    const move = (event: { offsetX: number; offsetY: number }) => {
+      const p = latest.current;
+      const hit = locate(event);
+      if (!hit) return setTip(null);
+      const { xv, yv, i, j } = hit;
       const index = j * p.width + i;
       const lines = [`${p.xLabel.split(" (")[0]} ${fmt(xv, 4)} · ${p.yLabel.split(" (")[0]} ${fmt(yv, 4)}`];
       if (p.categories) lines.push(p.categories.names[p.categories.indices[index]] ?? "");
@@ -203,11 +233,17 @@ export function Heatmap(props: HeatmapProps) {
       setTip({ left: event.offsetX + 14, top: event.offsetY + 12, lines });
     };
     const out = () => setTip(null);
+    const click = (event: { offsetX: number; offsetY: number }) => {
+      const hit = latest.current.onPick && locate(event);
+      if (hit) latest.current.onPick?.(hit.i, hit.j);
+    };
     zr.on("mousemove", move);
     zr.on("globalout", out);
+    zr.on("click", click);
     return () => {
       zr.off("mousemove", move);
       zr.off("globalout", out);
+      zr.off("click", click);
     };
   };
 

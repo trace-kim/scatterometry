@@ -1,16 +1,16 @@
 // Readers for NumPy .npy / .npz data (the server's array transport, see maskserver/arrays.py).
 import { unzipSync } from "fflate";
 
-export type NpyDtype = "f4" | "f8" | "c8" | "c16" | "u1" | "b1" | "i2" | "i4";
+export type NpyDtype = "f4" | "f8" | "c8" | "c16" | "u1" | "b1" | "i2" | "i4" | "u2" | "u4";
 
 export interface NpyArray {
   dtype: NpyDtype;
   shape: number[];
   /** Row-major values; complex dtypes are interleaved (re, im) pairs. */
-  data: Float32Array | Float64Array | Uint8Array | Int16Array | Int32Array;
+  data: Float32Array | Float64Array | Uint8Array | Int16Array | Int32Array | Uint16Array | Uint32Array;
 }
 
-const ITEM_SIZE: Record<NpyDtype, number> = { f4: 4, f8: 8, c8: 8, c16: 16, u1: 1, b1: 1, i2: 2, i4: 4 };
+const ITEM_SIZE: Record<NpyDtype, number> = { f4: 4, f8: 8, c8: 8, c16: 16, u1: 1, b1: 1, i2: 2, i4: 4, u2: 2, u4: 4 };
 
 export function parseNpy(bytes: Uint8Array): NpyArray {
   const magic = String.fromCharCode(...bytes.subarray(1, 6));
@@ -47,7 +47,11 @@ export function parseNpy(bytes: Uint8Array): NpyArray {
           ? new Int16Array(buffer)
           : dtype === "i4"
             ? new Int32Array(buffer)
-            : new Uint8Array(buffer);
+            : dtype === "u2"
+              ? new Uint16Array(buffer)
+              : dtype === "u4"
+                ? new Uint32Array(buffer)
+                : new Uint8Array(buffer);
   return { dtype, shape, data };
 }
 

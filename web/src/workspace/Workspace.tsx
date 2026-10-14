@@ -21,6 +21,7 @@ const DiffractionPanel = lazy(() => import("@/panels/DiffractionPanel").then((m)
 const NearFieldPanel = lazy(() => import("@/panels/NearFieldPanel").then((m) => ({ default: m.NearFieldPanel })));
 const SweepPanel = lazy(() => import("@/panels/SweepPanel").then((m) => ({ default: m.SweepPanel })));
 const PythonViewsPanel = lazy(() => import("@/panels/PythonViewsPanel").then((m) => ({ default: m.PythonViewsPanel })));
+const MeasurementPanel = lazy(() => import("@/panels/MeasurementPanel").then((m) => ({ default: m.MeasurementPanel })));
 
 const LAYOUT_KEY = "masksim.layout.v1";
 
@@ -32,6 +33,7 @@ export const PANELS: { id: string; title: string; component: FunctionComponent }
   { id: "nearfield", title: "Near field", component: NearFieldPanel },
   { id: "sweep", title: "Sweep", component: SweepPanel },
   { id: "python", title: "Python views", component: PythonViewsPanel },
+  { id: "measurement", title: "Measurement", component: MeasurementPanel },
 ];
 
 const components = Object.fromEntries(
@@ -87,12 +89,24 @@ export function WorkspaceProvider({
       const saved = localStorage.getItem(LAYOUT_KEY);
       if (saved) {
         dock.fromJSON(JSON.parse(saved));
-        restored = PANELS.every((p) => dock.getPanel(p.id));
+        restored = dock.panels.length > 0;
       }
     } catch {
       restored = false;
     }
     if (!restored) defaultLayout(dock);
+    // Layouts saved before a panel existed get it as a tab next to the views.
+    const anchor = dock.getPanel("geometry") ?? dock.panels.find((p) => p.id !== "stack");
+    for (const p of PANELS) {
+      if (dock.getPanel(p.id)) continue;
+      dock.addPanel({
+        id: p.id,
+        component: p.id,
+        title: p.title,
+        inactive: true,
+        position: anchor ? { referencePanel: anchor.id, direction: "within" } : undefined,
+      });
+    }
     // Saved layouts keep the titles they were saved with; show the current ones.
     for (const p of PANELS) dock.getPanel(p.id)?.api.setTitle(p.title);
     dock.onDidLayoutChange(() => {

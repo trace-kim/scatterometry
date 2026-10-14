@@ -1575,6 +1575,332 @@
           }
         }
       }
+    },
+    "/api/measurements": {
+      "post": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Upload Measurement",
+        "description": "Upload an SPE file as the raw request body (up to MASKSIM_MAX_UPLOAD_MB).",
+        "operationId": "upload_measurement_api_measurements_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "default": "measurement.spe",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "List Measurements",
+        "operationId": "list_measurements_api_measurements_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeasurementInfo"
+                  },
+                  "title": "Response List Measurements Api Measurements Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/measurements/{measurement_id}": {
+      "get": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Get Measurement",
+        "operationId": "get_measurement_api_measurements__measurement_id__get",
+        "parameters": [
+          {
+            "name": "measurement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Measurement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Delete Measurement",
+        "operationId": "delete_measurement_api_measurements__measurement_id__delete",
+        "parameters": [
+          {
+            "name": "measurement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Measurement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/measurements/{measurement_id}/settings": {
+      "get": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Measurement Settings",
+        "description": "Every acquisition setting the file records, as (path, value) rows.",
+        "operationId": "measurement_settings_api_measurements__measurement_id__settings_get",
+        "parameters": [
+          {
+            "name": "measurement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Measurement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SettingRow"
+                  },
+                  "title": "Response Measurement Settings Api Measurements  Measurement Id  Settings Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/measurements/{measurement_id}/frame": {
+      "get": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Measurement Frame",
+        "description": "One frame of a region, or the mean of all its frames (`average`).\n\nNPZ: `counts` (height x width, the file's pixel type; float32 for averages; row 0 is\nthe first row read out), `x_px`, `y_px` (pixel centres in sensor pixels).",
+        "operationId": "measurement_frame_api_measurements__measurement_id__frame_get",
+        "parameters": [
+          {
+            "name": "measurement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Measurement Id"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Region"
+            }
+          },
+          {
+            "name": "index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Index"
+            }
+          },
+          {
+            "name": "average",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Average"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NumPy .npz archive",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/measurements/{measurement_id}/trace": {
+      "get": {
+        "tags": [
+          "measurements"
+        ],
+        "summary": "Measurement Trace",
+        "description": "Total and peak counts of every frame of a region (with time stamps when recorded).",
+        "operationId": "measurement_trace_api_measurements__measurement_id__trace_get",
+        "parameters": [
+          {
+            "name": "measurement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Measurement Id"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementTrace"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2149,6 +2475,214 @@
           "n"
         ],
         "title": "MaterialDoc"
+      },
+      "MeasurementInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "format": {
+            "type": "string",
+            "const": "spe",
+            "title": "Format"
+          },
+          "version": {
+            "type": "number",
+            "title": "Version"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "created": {
+            "type": "number",
+            "title": "Created"
+          },
+          "dtype": {
+            "type": "string",
+            "title": "Dtype"
+          },
+          "frames": {
+            "type": "integer",
+            "title": "Frames"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/MeasurementRegion"
+            },
+            "type": "array",
+            "title": "Regions"
+          },
+          "sensor": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary",
+            "default": {}
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "timestamp_events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Timestamp Events",
+            "default": []
+          },
+          "setting_count": {
+            "type": "integer",
+            "title": "Setting Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "format",
+          "version",
+          "size_bytes",
+          "created",
+          "dtype",
+          "frames",
+          "regions",
+          "setting_count"
+        ],
+        "title": "MeasurementInfo"
+      },
+      "MeasurementRegion": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "x": {
+            "type": "integer",
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "title": "Y"
+          },
+          "x_binning": {
+            "type": "integer",
+            "title": "X Binning"
+          },
+          "y_binning": {
+            "type": "integer",
+            "title": "Y Binning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "width",
+          "height",
+          "x",
+          "y",
+          "x_binning",
+          "y_binning"
+        ],
+        "title": "MeasurementRegion",
+        "description": "A region of interest; x, y (0-based sensor pixels) and binning locate it on the sensor."
+      },
+      "MeasurementTrace": {
+        "properties": {
+          "region": {
+            "type": "integer",
+            "title": "Region"
+          },
+          "frame": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Frame"
+          },
+          "total": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Total"
+          },
+          "max": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Max"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "frame_numbers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Numbers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "region",
+          "frame",
+          "total",
+          "max"
+        ],
+        "title": "MeasurementTrace",
+        "description": "Per-frame statistics of one region; `time_s` is the first time stamp event, relative to frame 0."
       },
       "ModesResponse": {
         "properties": {
@@ -2813,6 +3347,24 @@
           "project"
         ],
         "title": "SectionRequest"
+      },
+      "SettingRow": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "value"
+        ],
+        "title": "SettingRow"
       },
       "SliceInfo": {
         "properties": {

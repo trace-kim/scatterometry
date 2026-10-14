@@ -10,6 +10,8 @@ import type {
   CheckResult,
   FluxResponse,
   JobInfo,
+  MeasurementInfo,
+  MeasurementTrace,
   ModesResponse,
   OrdersResponse,
   Polarization,
@@ -18,6 +20,7 @@ import type {
   PupilResponse,
   PythonViewInfo,
   PythonViewResult,
+  SettingRow,
   SliceInfo,
   SweepResult,
 } from "./model";
@@ -261,5 +264,62 @@ export function usePythonView(
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FOREVER,
+  });
+}
+
+// ---- measurements (uploaded camera files; immutable once uploaded) ---------------------------
+
+export function useMeasurements() {
+  return useQuery({
+    queryKey: ["measurements"],
+    queryFn: ({ signal }) => api.get<MeasurementInfo[]>("/measurements", undefined, signal),
+  });
+}
+
+export function useUploadMeasurement() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.upload<MeasurementInfo>("/measurements", file, { name: file.name }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["measurements"] }),
+  });
+}
+
+export function useDeleteMeasurement() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/measurements/${id}`),
+    onSettled: () => client.invalidateQueries({ queryKey: ["measurements"] }),
+  });
+}
+
+export function useMeasurementFrame(id: string | null, region: number, index: number, average: boolean) {
+  return useQuery<Arrays>({
+    queryKey: ["measurement", id, "frame", region, average ? "mean" : index],
+    queryFn: ({ signal }) =>
+      api.getArrays(`/measurements/${id}/frame`, average ? { region, average } : { region, index }, signal),
+    enabled: !!id,
+    staleTime: FOREVER,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useMeasurementTrace(id: string | null, region: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ["measurement", id, "trace", region],
+    queryFn: ({ signal }) => api.get<MeasurementTrace>(`/measurements/${id}/trace`, { region }, signal),
+    enabled: !!id && enabled,
+    staleTime: FOREVER,
+    retry: false,
+  });
+}
+
+export function useMeasurementSettings(id: string | null) {
+  return useQuery({
+    queryKey: ["measurement", id, "settings"],
+    queryFn: ({ signal }) => api.get<SettingRow[]>(`/measurements/${id}/settings`, undefined, signal),
+    enabled: !!id,
+    staleTime: FOREVER,
+    retry: false,
   });
 }

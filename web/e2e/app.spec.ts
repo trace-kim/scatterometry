@@ -1,3 +1,4 @@
+import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 
 // Console noise from libraries that is not an application error.
@@ -146,5 +147,40 @@ test("contact holes solve in 2D and a sweep streams its points", async ({ page }
   await page.getByRole("button", { name: "Run sweep" }).click();
   await expect(page.getByText(/Finished in/)).toBeVisible({ timeout: 90_000 });
   await expect(page.getByText(/13 of 13 points/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("opens a measured CCD file and browses its frames", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await openTab(page, "Measurement");
+  await expect(page.getByText("No measurement open")).toBeVisible();
+
+  // fixtures/ccd-demo.spe: masksim.spe.write_spe of 3 frames, 160 x 120 px binned 2 x 2 at
+  // sensor pixel (512, 600), five diffraction-like spots, one saturated pixel in frame 2.
+  await page.getByTestId("measurement-file").setInputFiles(path.join(import.meta.dirname, "fixtures", "ccd-demo.spe"));
+  await expect(page.getByText("Opened ccd-demo.spe")).toBeVisible();
+  const frameCard = page.locator("section", { has: page.getByRole("heading", { name: "Frame", exact: true }) });
+  await expect(frameCard.getByText(/160 × 120 px · frame 1 of 3 · uint16 · binned 2×2/)).toBeVisible();
+  await expect(frameCard.locator("canvas").first()).toBeVisible();
+  await expect(page.getByText("Sensor temperature")).toBeVisible();
+  await expect(page.getByText("-70.0 °C").first()).toBeVisible();
+
+  // Frame 2 holds a saturated pixel; the mean of all frames is float data without saturation.
+  const frameNumber = page.getByRole("textbox", { name: "Frame number" });
+  await frameNumber.fill("2");
+  await frameNumber.press("Enter");
+  await expect(page.getByText("1 saturated px")).toBeVisible();
+  await page.getByRole("switch", { name: "Mean of all frames" }).click();
+  await expect(frameCard.getByText(/mean of 3 frames · float32/)).toBeVisible();
+  await expect(page.getByText(/saturated px/)).toHaveCount(0);
+
+  // Every setting the file records is searchable.
+  await page.getByRole("textbox", { name: "Filter settings" }).fill("exposuretime");
+  await expect(page.locator(".ag-row")).toHaveCount(1);
+  await expect(page.locator(".ag-row").first()).toContainText("20");
+
+  await page.getByRole("button", { name: "Remove file" }).click();
+  await expect(page.getByText("No measurement open")).toBeVisible();
   expect(errors).toEqual([]);
 });

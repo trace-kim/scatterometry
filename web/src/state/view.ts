@@ -59,6 +59,14 @@ export interface ViewState {
   };
   sweep: { parameter: string | null; start: number; stop: number; points: number; orders: string[] };
   python: { view: string | null };
+  measurement: {
+    colormap: ColormapName;
+    scale: Scale;
+    /** Percentiles clipped at each end of the color range (0 = min-max). */
+    clip: number;
+    /** Show the mean of all frames instead of one. */
+    average: boolean;
+  };
 }
 
 const section = (): SectionView => ({ axis: "x", offset: 0.5, periods: 2, zMin: null, zMax: null });
@@ -105,6 +113,7 @@ const DEFAULTS: ViewState = {
   },
   sweep: { parameter: null, start: 0, stop: 12, points: 13, orders: [] },
   python: { view: null },
+  measurement: { colormap: "inferno", scale: "linear", clip: 0.1, average: false },
 };
 
 interface ViewStore extends ViewState {

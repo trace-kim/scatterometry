@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Finished runs' solutions are dropped oldest-first beyond this (the newest always stays).
     max_results_gb: float = 4.0
     request_threads: int = 8    # requests computed at once; bounds the memory of concurrent views
+    # Measurement files (CCD frames) are uploaded whole and kept in memory, oldest dropped first.
+    max_upload_mb: float = 1024.0
+    max_measurements_gb: float = 4.0
 
     @property
     def serves_web(self) -> bool:

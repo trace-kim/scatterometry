@@ -5,7 +5,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
-from typing import Optional
+from typing import Dict, Optional
 
 import anyio.to_thread
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -19,7 +19,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from .arrays import NPZ_MEDIA_TYPE
 from .events import EventBroker
 from .jobs import JobManager
-from .routes import dielectric, events, geometry, projects, python_views, runs, sweeps
+from .measurements import MeasurementStore
+from .routes import dielectric, events, geometry, measurements, projects, python_views, runs, sweeps
 from .settings import Settings
 
 log = logging.getLogger("maskserver")
@@ -40,18 +41,20 @@ def limit_blas_threads(threads: int):
 
 
 class BodySizeLimit:
-    """Refuse request bodies over `max_bytes` with HTTP 413 before they are buffered in memory."""
+    """Refuse request bodies over `max_bytes` (or a path's own limit) with HTTP 413 before they are buffered."""
 
-    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int, path_limits: Optional[Dict[str, int]] = None) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.path_limits = path_limits or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        max_bytes = self.path_limits.get(scope["path"], self.max_bytes)
         declared = dict(scope["headers"]).get(b"content-length", b"")
-        if declared.isdigit() and int(declared) > self.max_bytes:
+        if declared.isdigit() and int(declared) > max_bytes:
             await JSONResponse({"detail": "request body too large"}, status_code=413)(scope, receive, send)
             return
         received = 0
@@ -61,7 +64,7 @@ class BodySizeLimit:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:  # chunked uploads declare no length
+                if received > max_bytes:  # chunked uploads declare no length
                     # FastAPI re-raises HTTPExceptions from body reading as responses.
                     raise HTTPException(status_code=413, detail="request body too large")
             return message
@@ -94,6 +97,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.settings = settings
     app.state.jobs = jobs
     app.state.broker = broker
+    app.state.measurements = MeasurementStore(keep_bytes=int(settings.max_measurements_gb * 2**30))
 
     # Compress JSON only. Float arrays barely shrink (~10%) but cost ~50-150 ms of CPU per
     # field plane, and the event stream must never be buffered.
@@ -102,7 +106,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
                            allow_headers=["*"])
-    app.add_middleware(BodySizeLimit, max_bytes=int(settings.max_body_mb * 2**20))  # added last: outermost
+    app.add_middleware(BodySizeLimit, max_bytes=int(settings.max_body_mb * 2**20),  # added last: outermost
+                       path_limits={"/api/measurements": int(settings.max_upload_mb * 2**20)})
 
     api = APIRouter(prefix="/api")
 
@@ -111,7 +116,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return {"status": "ok", "version": __version__, "blas_threads": settings.blas_threads,
                 "max_jobs": settings.max_jobs}
 
-    for module in (projects, geometry, dielectric, runs, sweeps, events, python_views):
+    for module in (projects, geometry, dielectric, runs, sweeps, events, python_views, measurements):
         api.include_router(module.router)
     app.include_router(api)
 

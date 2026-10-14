@@ -30,12 +30,16 @@ describe("npz", () => {
       "E.npy": npy("<c8", [2], new Float32Array([1, -1, 0.5, 2])),
       "idx.npy": npy("|u1", [3], new Uint8Array([0, 2, 1])),
       "mx.npy": npy("<i2", [3], new Int16Array([-1, 0, 1])),
+      "ccd.npy": npy("<u2", [2], new Uint16Array([0, 65535])),
+      "big.npy": npy("<u4", [1], new Uint32Array([4000000000])),
     });
     const arrays = parseNpz(archive.buffer as ArrayBuffer);
     expect(arrays.E.dtype).toBe("c8");
     expect(Array.from(arrays.E.data)).toEqual([1, -1, 0.5, 2]);
     expect(Array.from(arrays.idx.data)).toEqual([0, 2, 1]);
     expect(Array.from(arrays.mx.data)).toEqual([-1, 0, 1]);
+    expect(Array.from(arrays.ccd.data)).toEqual([0, 65535]);
+    expect(Array.from(arrays.big.data)).toEqual([4000000000]);
   });
 
   it("rejects non-npy data", () => {
