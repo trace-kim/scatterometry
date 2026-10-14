@@ -58,7 +58,10 @@ class Layer:
 class RCWASettings:
     """
     RCWA numerical settings.
-    Nx, Ny: number of harmonics on each side (orders are -Nx..Nx, -Ny..Ny)
+    Nx, Ny: number of harmonics on each side of the window centre
+    shift_x, shift_y: window centre; orders are shift_x-Nx..shift_x+Nx (likewise y).
+        |shift| <= N keeps the specular order (0, 0) in the window. A shift towards
+        kx = 0 (pupil_centre_shift) covers the propagating orders at oblique incidence.
     grid_Nx, grid_Ny: real-space sampling for building convolution matrices (Step 2/3)
     """
     Nx: int
@@ -66,6 +69,8 @@ class RCWASettings:
     grid_Nx: int
     grid_Ny: int
     debug: bool = False
+    shift_x: int = 0
+    shift_y: int = 0
 
 
 @dataclass(frozen=True)

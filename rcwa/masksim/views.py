@@ -217,7 +217,7 @@ def eps_plane(spec: MaskSpec, slices: Sequence[Slice], s: Slice, xs: np.ndarray,
 def convolution_matrix(spec: MaskSpec, slices: Sequence[Slice], s: Slice) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The slice's Toeplitz permittivity matrix [eps] and the harmonic indices (mx, my) of its rows."""
     lattice, settings = solver_settings(spec, list(slices))
-    mx, my = _harmonic_indices(settings.Nx, settings.Ny)
+    mx, my = _harmonic_indices(settings.Nx, settings.Ny, settings.shift_x, settings.shift_y)
     E_conv, _, _ = _build_convolution_matrices_for_layer(Layer(s.thickness, s.pattern), lattice, settings, mx, my)
     return to_numpy(E_conv), to_numpy(mx), to_numpy(my)
 

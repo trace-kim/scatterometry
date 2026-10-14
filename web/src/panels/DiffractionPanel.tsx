@@ -13,7 +13,6 @@ import { PanelLayout, Stat, ViewCard } from "@/components/layout";
 import { NumberField } from "@/components/number-field";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { colormapStops } from "@/lib/colormaps";
 import { downloadText, toCsv } from "@/lib/download";
 import { fixed, fmt } from "@/lib/format";
 import { squareGrid, useElementSize } from "@/lib/use-element-size";
@@ -21,6 +20,8 @@ import { useView } from "@/state/view";
 import { EChart, type EChartsOption } from "@/viz/EChart";
 import { useThemeColors } from "@/viz/theme";
 import { PolarizationPicker, usePol, useRunState } from "./common";
+import { circle, type Overlay, orderMapOption } from "./orderMap";
+import { CameraControls, cameraGeometry, cameraOption } from "./PupilCamera";
 import { RunRequired } from "./RunRequired";
 
 const ORDER_COLUMNS: (keyof OrderRow)[] = [
@@ -94,96 +95,43 @@ export function DiffractionPanel() {
   }, [byPol, pol, view.log]);
 
   const zoomToNa = view.pupilZoom === "na" && !!pupil.data?.na_mask;
+  const camera = view.pupilMode === "camera";
+  const aimedAt = cameraGeometry(view.camera, pupil.data);
+  const cameraView = useMemo(
+    () =>
+      cameraOption(
+        pupil.data,
+        view.camera,
+        colors,
+        squareGrid(pupilSize, { left: 56, right: 64, top: 12, bottom: 44 }),
+      ),
+    [pupil.data, view.camera, colors, pupilSize],
+  );
+  const setCamera = (patch: Partial<typeof view.camera>) =>
+    setView("diffraction", { camera: { ...view.camera, ...patch } });
 
   const pupilOption = useMemo<EChartsOption>(() => {
     const p = pupil.data;
-    const circle = (cx: number, cy: number, r: number) =>
-      Array.from({ length: 181 }, (_, i) => [
-        cx + r * Math.cos((i / 90) * Math.PI),
-        cy + r * Math.sin((i / 90) * Math.PI),
-      ]);
-    const rMax = p ? Math.max(...p.R, 1e-30) : 1;
     // The window is the whole unit circle, or the NA circle around the specular order.
-    const [cx, cy] = zoomToNa && p ? p.center : [0, 0];
-    const half = zoomToNa && p?.na_mask ? p.na_mask * 1.25 : 1.05;
-    const grid = squareGrid(pupilSize, { left: 56, right: 64, top: 12, bottom: 44 });
-    // Markers scale with the plot; zoomed in, the orders are far apart and can be larger.
-    const maxSymbol = Math.min(Math.max(grid.width * (zoomToNa ? 0.12 : 0.075), 14), 64);
-    const series: object[] = [
-      {
-        type: "line",
-        name: "propagation cutoff",
-        data: circle(0, 0, 1),
-        showSymbol: false,
-        silent: true,
-        lineStyle: { type: "dashed", width: 1, color: colors.muted },
-      },
-    ];
+    const overlays: Overlay[] = [{ name: "propagation cutoff", data: circle(0, 0, 1), kind: "outline" }];
     if (p?.na_mask)
-      series.push({
-        type: "line",
+      overlays.push({
         name: `NA ${view.na} / ${view.reduction}×`,
         data: circle(p.center[0], p.center[1], p.na_mask),
-        showSymbol: false,
-        silent: true,
-        lineStyle: { width: 1.5, color: "#E45756" },
+        kind: "aperture",
       });
-    series.push({
-      type: "scatter",
-      name: "orders",
-      data: p ? p.sx.map((x, i) => [x, p.sy[i], p.R[i], p.phase_deg[i] ?? 0, p.m[i], p.n[i]]) : [],
-      symbolSize: (d: number[]) => 5 + (maxSymbol - 5) * Math.sqrt(Math.max(d[2], 0) / rMax),
-      itemStyle: { borderColor: colors.foreground, borderWidth: 0.6 },
-      // Zoomed in, only a few orders are on screen: name them.
-      label: {
-        show: zoomToNa,
-        position: "right",
-        distance: 6,
-        color: colors.muted,
-        fontSize: 10,
-        formatter: (item: { data: number[] }) => `(${item.data[4]},${item.data[5]})`,
-      },
-      z: 5,
+    return orderMapOption({
+      points: p
+        ? p.sx.map((x, i) => ({ x, y: p.sy[i], R: p.R[i], phase: p.phase_deg[i] ?? 0, m: p.m[i], n: p.n[i] }))
+        : [],
+      overlays,
+      center: zoomToNa && p ? (p.center as [number, number]) : [0, 0],
+      half: zoomToNa && p?.na_mask ? p.na_mask * 1.25 : 1.05,
+      zoomed: zoomToNa,
+      axisNames: ["kx / (k₀ n)", "ky / (k₀ n)"],
+      colors,
+      grid: squareGrid(pupilSize, { left: 56, right: 64, top: 12, bottom: 44 }),
     });
-    const axis = (min: number, max: number, name: string, nameGap: number) => ({
-      type: "value",
-      min,
-      max,
-      name,
-      nameLocation: "middle",
-      nameGap,
-      axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (v: number) => fmt(v, 3) },
-    });
-    return {
-      animation: false,
-      grid,
-      tooltip: {
-        trigger: "item",
-        formatter: (item: { seriesType: string; data: number[] }) =>
-          item.seriesType === "scatter"
-            ? `order (${item.data[4]},${item.data[5]})<br/>R = ${fmt(item.data[2], 5)}<br/>phase = ${fixed(item.data[3], 1)}°`
-            : "",
-      },
-      xAxis: axis(cx - half, cx + half, "kx / (k₀ n)", 26),
-      yAxis: axis(cy - half, cy + half, "ky / (k₀ n)", 40),
-      visualMap: {
-        type: "continuous",
-        seriesIndex: series.length - 1,
-        dimension: 3,
-        min: -180,
-        max: 180,
-        calculable: false,
-        orient: "vertical",
-        right: 8,
-        top: "middle",
-        itemWidth: 12,
-        itemHeight: Math.max(grid.height * 0.5, 80),
-        text: ["180°", "−180°"],
-        textStyle: { color: colors.muted, fontSize: 10 },
-        inRange: { color: colormapStops("twilight") },
-      },
-      series,
-    };
   }, [pupil.data, colors, view.na, view.reduction, pupilSize, zoomToNa]);
 
   const columns = useMemo<ColDef<OrderRow>[]>(
@@ -280,32 +228,71 @@ export function DiffractionPanel() {
             <EChart option={barOption} />
           </ViewCard>
           <ViewCard
-            title="Pupil"
-            subtitle={`size ∝ √R, color = phase of the ${pupil.data?.basis ?? pol} component`}
+            title={camera ? "Camera" : "Pupil"}
+            subtitle={
+              camera
+                ? cameraView.summary
+                  ? `${cameraView.summary.onSensor} of ${cameraView.summary.total} orders on the sensor (R = ${fmt(cameraView.summary.power, 4)}); size ∝ √R, color = phase`
+                  : "size ∝ √R, color = phase"
+                : `size ∝ √R, color = phase of the ${pupil.data?.basis ?? pol} component`
+            }
             className="aspect-square max-h-[760px] min-h-[420px]"
+            bodyClassName="flex flex-col"
             loading={pupil.isFetching}
             errors={pupil.error ? errorMessages(pupil.error) : undefined}
             actions={
-              <Segmented
-                aria-label="Pupil zoom"
-                value={zoomToNa ? "na" : "full"}
-                onChange={(pupilZoom) => setView("diffraction", { pupilZoom })}
-                options={[
-                  { value: "full", label: "Full", hint: "The whole pupil, up to grazing orders" },
-                  {
-                    value: "na",
-                    label: "NA",
-                    hint: pupil.data?.na_mask
-                      ? `Zoom to the mask-side NA circle (${fmt(pupil.data.na_mask, 3)})`
-                      : "Set a wafer NA to zoom to it",
-                    disabled: !pupil.data?.na_mask,
-                  },
-                ]}
-              />
+              <div className="flex items-center gap-1.5">
+                <Segmented
+                  aria-label="Pupil view"
+                  value={view.pupilMode}
+                  onChange={(pupilMode) => setView("diffraction", { pupilMode })}
+                  options={[
+                    {
+                      value: "pupil",
+                      label: "Pupil",
+                      hint: "Direction cosines (kx, ky)/(k₀n): the orders form a lattice",
+                    },
+                    {
+                      value: "camera",
+                      label: "Camera",
+                      hint: "The orders on a flat sensor facing them: lattice columns become arcs at grazing incidence",
+                    },
+                  ]}
+                />
+                {camera ? (
+                  <Segmented
+                    aria-label="Camera zoom"
+                    value={view.camera.zoom}
+                    onChange={(zoom) => setCamera({ zoom })}
+                    options={[
+                      { value: "all", label: "All", hint: `Every order within 75° of the camera axis` },
+                      { value: "sensor", label: "Sensor", hint: "Zoom to the sensor" },
+                    ]}
+                  />
+                ) : (
+                  <Segmented
+                    aria-label="Pupil zoom"
+                    value={zoomToNa ? "na" : "full"}
+                    onChange={(pupilZoom) => setView("diffraction", { pupilZoom })}
+                    options={[
+                      { value: "full", label: "Full", hint: "The whole pupil, up to grazing orders" },
+                      {
+                        value: "na",
+                        label: "NA",
+                        hint: pupil.data?.na_mask
+                          ? `Zoom to the mask-side NA circle (${fmt(pupil.data.na_mask, 3)})`
+                          : "Set a wafer NA to zoom to it",
+                        disabled: !pupil.data?.na_mask,
+                      },
+                    ]}
+                  />
+                )}
+              </div>
             }
           >
-            <div ref={pupilBox} className="h-full w-full">
-              <EChart option={pupilOption} />
+            {camera && <CameraControls settings={view.camera} aimedAt={aimedAt} onChange={setCamera} />}
+            <div ref={pupilBox} className="min-h-0 w-full flex-1">
+              <EChart option={camera ? cameraView.option : pupilOption} />
             </div>
           </ViewCard>
         </div>

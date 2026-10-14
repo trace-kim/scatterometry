@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .backend import get_array_module
+from .blockdiag import DiagBlocks, dense, identity_like
 from .linalg import _solve
 
 
@@ -27,9 +28,15 @@ def _redheffer_star(SA: SMatrix, SB: SMatrix) -> SMatrix:
       S12 = SA12 (I - SB11 SA22)^-1 SB12
       S21 = SB21 (I - SA22 SB11)^-1 SA21
       S22 = SB22 + SB21 (I - SA22 SB11)^-1 SA22 SB12
+
+    Two all-DiagBlocks S-matrices (homogeneous layers) combine in O(Nh); any other
+    combination is computed densely.
     """
-    xp = get_array_module()
-    I = xp.eye(SA.S11.shape[0], dtype=xp.complex128)
+    blocks = (SA.S11, SA.S12, SA.S21, SA.S22, SB.S11, SB.S12, SB.S21, SB.S22)
+    if not all(isinstance(b, DiagBlocks) for b in blocks):
+        SA = SMatrix(*(dense(b) for b in blocks[:4]))
+        SB = SMatrix(*(dense(b) for b in blocks[4:]))
+    I = identity_like(SA.S11)
 
     D = I - SB.S11 @ SA.S22
     F = I - SA.S22 @ SB.S11
@@ -69,8 +76,7 @@ def _connection_smatrix_reflection(W0, V0, Wref, Vref) -> SMatrix:
       SR21 =  0.5 (A - B A^{-1} B)
       SR22 =  B A^{-1}
     """
-    xp = get_array_module()
-    I = xp.eye(W0.shape[0], dtype=xp.complex128)
+    I = identity_like(W0, V0, Wref, Vref)
 
     A = _solve(W0, Wref) + _solve(V0, Vref)
     B = _solve(W0, Wref) - _solve(V0, Vref)
@@ -94,8 +100,7 @@ def _connection_smatrix_transmission(W0, V0, Wtrn, Vtrn) -> SMatrix:
       ST21 =  2*inv(A)
       ST22 = -A\\B
     """
-    xp = get_array_module()
-    I = xp.eye(W0.shape[0], dtype=xp.complex128)
+    I = identity_like(W0, V0, Wtrn, Vtrn)
 
     A = _solve(W0, Wtrn) + _solve(V0, Vtrn)
     B = _solve(W0, Wtrn) - _solve(V0, Vtrn)

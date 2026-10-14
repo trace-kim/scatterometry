@@ -3,19 +3,36 @@ Convolution matrix construction for RCWA (Steps 2-3).
 """
 from __future__ import annotations
 
+import math
 from typing import Tuple
 
 from .backend import get_array_module
 from .models import Layer, Lattice, RCWASettings
 
 
-def _harmonic_indices(Nx: int, Ny: int) -> Tuple:
-    """Return arrays mx, my listing harmonic orders in a consistent flattened order."""
+def _harmonic_indices(Nx: int, Ny: int, shift_x: int = 0, shift_y: int = 0) -> Tuple:
+    """Return arrays mx, my listing harmonic orders in a consistent flattened order.
+
+    Orders run shift_x-Nx..shift_x+Nx (mx fastest) and shift_y-Ny..shift_y+Ny.
+    """
+    if abs(shift_x) > Nx or abs(shift_y) > Ny:
+        raise ValueError("harmonic window must contain the specular order: need |shift| <= N")
     xp = get_array_module()
-    mx = xp.arange(-Nx, Nx+1)
-    my = xp.arange(-Ny, Ny+1)
+    mx = xp.arange(shift_x - Nx, shift_x + Nx + 1)
+    my = xp.arange(shift_y - Ny, shift_y + Ny + 1)
     MX, MY = xp.meshgrid(mx, my, indexing="xy")  # shape (2Ny+1, 2Nx+1)
     return MX.ravel(), MY.ravel()
+
+
+def pupil_centre_shift(k_inc: float, g: float, N: int) -> int:
+    """Window centre that puts kx = k_inc - m g = 0 mid-window, kept within |shift| <= N.
+
+    k_inc and g are normalized by k0 (k_inc = n sin(theta) cos(phi), g = lambda / L).
+    """
+    if N == 0 or g == 0:
+        return 0
+    # Round half up (not Python's half-to-even) so the web UI can mirror it exactly.
+    return int(max(-N, min(N, math.floor(k_inc / g + 0.5))))
 
 
 def _fft_coeffs_2d(f_xy):

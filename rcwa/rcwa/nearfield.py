@@ -9,6 +9,9 @@ Differences from RCWASolver.solve():
 - Layers that compare equal (pattern, mu_r, thickness) share one eigen-decomposition
   and one layer S-matrix, which makes periodic multilayers cheap. Patterns that are
   not value-hashable are cached by identity.
+- Homogeneous layers (pattern.uniform_eps() is not None), the gap and the external
+  regions get analytic modes stored as DiagBlocks (blockdiag.py). Their S-matrices and
+  star products cost O(Nh), so only patterned layers pay for dense algebra.
 - The cascade runs bottom-up and keeps the reflection matrix seen looking down from
   every interface. A top-down pass then gives the gap-medium amplitudes there.
 
@@ -26,16 +29,12 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 
 from .backend import get_array_module, to_numpy
+from .blockdiag import DiagBlocks, eye_minus, homogeneous_modes
 from .convolution import _build_convolution_matrices_for_layer, _harmonic_indices
 from .efficiencies import _diffraction_efficiencies, _power_conservation
-from .eigenmodes import (
-    _external_region_modes,
-    _gap_eigenmodes,
-    _layer_eigenmodes,
-    _layer_scattering_matrix_with_lam,
-)
+from .eigenmodes import _layer_eigenmodes, _layer_scattering_matrix_with_lam
 from .fields import _compute_fields, _source_vector, _te_tm_basis
-from .linalg import _solve
+from .linalg import _outgoing_sqrt, _solve
 from .models import Layer, RCWAProblem
 from .smatrix import (
     SMatrix,
@@ -48,7 +47,11 @@ from .wavevector import _wavevector_expansion
 
 @dataclass
 class LayerModes:
-    """Eigen-solution of one distinct layer; identical layers share an instance."""
+    """Eigen-solution of one distinct layer; identical layers share an instance.
+
+    For a homogeneous layer W, V, A, B are DiagBlocks and E_conv, Einv, Uinv are the
+    diagonals (length Nh) of the corresponding Nh x Nh matrices.
+    """
     E_conv: object
     Einv: object
     Uinv: object
@@ -69,7 +72,15 @@ class LayerField:
     d_minus: object = None  # backward amplitudes at the bottom of the layer
 
 
+def _uniform_eps(layer: Layer):
+    uniform = getattr(layer.pattern, "uniform_eps", None)
+    return None if uniform is None else uniform()
+
+
 def _modes_key(layer: Layer):
+    eps = _uniform_eps(layer)
+    if eps is not None:
+        return ("uniform", complex(eps), complex(layer.mu_r))
     try:
         hash(layer.pattern)
         return (layer.pattern, complex(layer.mu_r))
@@ -86,6 +97,15 @@ def _plane_wave_u(sx, sy, sz, Kx, Ky, Kz, mu):
     )
 
 
+def _times_transpose(X, M):
+    """X @ M.T for a dense matrix, DiagBlocks, or diagonal vector M."""
+    if isinstance(M, DiagBlocks):
+        return (M @ X.T).T
+    if M.ndim == 1:
+        return X * M[None, :]
+    return X @ M.T
+
+
 class NearFieldSolver:
     """RCWA solver that keeps per-layer modes for field reconstruction."""
 
@@ -100,16 +120,16 @@ class NearFieldSolver:
         report = progress or (lambda fraction, message: None)
         xp = get_array_module()
         st = problem.settings
-        mx, my = _harmonic_indices(st.Nx, st.Ny)
+        mx, my = _harmonic_indices(st.Nx, st.Ny, st.shift_x, st.shift_y)
         Nh = mx.size
-        I1 = xp.eye(Nh, dtype=xp.complex128)
-        I2 = xp.eye(2 * Nh, dtype=xp.complex128)
 
         kdat = _wavevector_expansion(problem, mx, my)
         k0 = kdat["k0"]
         Kx, Ky = kdat["Kx"], kdat["Ky"]
         Kz_ref, Kz_trn = kdat["Kz_ref"], kdat["Kz_trn"]
-        W0, V0, _ = _gap_eigenmodes(Kx, Ky)
+        # Gap medium (vacuum): structured for homogeneous layers, dense for patterned ones.
+        W0s, V0s, _ = homogeneous_modes(Kx, Ky, 1.0, 1.0, _outgoing_sqrt(1.0 - Kx**2 - Ky**2))
+        W0, V0 = W0s.to_dense(), V0s.to_dense()
 
         mode_cache: Dict = {}
         smatrix_cache: Dict = {}
@@ -121,7 +141,20 @@ class NearFieldSolver:
         z = 0.0
         for layer, key in zip(problem.layers, keys):
             modes = mode_cache.get(key)
-            if modes is None:
+            uniform = key[0] == "uniform"
+            if modes is None and uniform:
+                eps, mu = key[1], key[2]
+                W, V, lam = homogeneous_modes(Kx, Ky, eps, mu, _outgoing_sqrt(mu * eps - Kx**2 - Ky**2))
+                W_W0 = _solve(W, W0s)
+                V_V0 = _solve(V, V0s)
+                ones = xp.ones(Nh, dtype=xp.complex128)
+                modes = LayerModes(
+                    E_conv=eps * ones, Einv=ones / eps, Uinv=ones / mu,
+                    W=W, V=V, lam=lam, A=W_W0 + V_V0, B=W_W0 - V_V0,
+                )
+                mode_cache[key] = modes
+            elif modes is None:
+                I1 = xp.eye(Nh, dtype=xp.complex128)
                 E_conv, U_conv, _ = _build_convolution_matrices_for_layer(layer, problem.lattice, st, mx, my)
                 W, V, lam = _layer_eigenmodes(E_conv, U_conv, Kx, Ky)
                 W_W0 = _solve(W, W0)
@@ -137,23 +170,20 @@ class NearFieldSolver:
             if S is None:
                 S = _layer_scattering_matrix_with_lam(
                     W_i=modes.W, V_i=modes.V, lam=modes.lam,
-                    W0=W0, V0=V0, k0=k0, thickness=layer.thickness,
+                    W0=W0s if uniform else W0, V0=V0s if uniform else V0,
+                    k0=k0, thickness=layer.thickness,
                 )
                 smatrix_cache[skey] = S
             layers.append(LayerField(modes=modes, z_top=z, thickness=float(layer.thickness)))
             smatrices.append(S)
             z += float(layer.thickness)
 
-        Wref, Vref = _external_region_modes(
-            eps_r=problem.region_ref.eps_r, mu_r=problem.region_ref.mu_r,
-            Kx=Kx, Ky=Ky, Kz_ext=Kz_ref, sign_lambda=-1,
-        )
-        Sref = _connection_smatrix_reflection(W0, V0, Wref, Vref)
-        Wtrn, Vtrn = _external_region_modes(
-            eps_r=problem.region_trn.eps_r, mu_r=problem.region_trn.mu_r,
-            Kx=Kx, Ky=Ky, Kz_ext=Kz_trn, sign_lambda=+1,
-        )
-        Strn = _connection_smatrix_transmission(W0, V0, Wtrn, Vtrn)
+        # External regions: lam = -j Kz_ref above the stack and +j Kz_trn below it.
+        ref, trn = problem.region_ref, problem.region_trn
+        Wref, Vref, _ = homogeneous_modes(Kx, Ky, complex(ref.eps_r), complex(ref.mu_r), -Kz_ref)
+        Sref = _connection_smatrix_reflection(W0s, V0s, Wref, Vref)
+        Wtrn, Vtrn, _ = homogeneous_modes(Kx, Ky, complex(trn.eps_r), complex(trn.mu_r), Kz_trn)
+        Strn = _connection_smatrix_transmission(W0s, V0s, Wtrn, Vtrn)
 
         # Bottom-up cascade. R_down[k] is the reflection seen looking down from
         # interface k (the top of layer k; interface N is the bottom of the stack).
@@ -194,11 +224,11 @@ class NearFieldSolver:
         if keep_fields:
             report(0.95, "Internal fields")
             # Top-down pass: gap amplitudes at each interface (a: down-going, b: up-going).
-            a = _solve(I2 - Sref.S22 @ R_down[0], Sref.S21 @ fields["c_src"])
+            a = _solve(eye_minus(Sref.S22 @ R_down[0]), Sref.S21 @ fields["c_src"])
             b = R_down[0] @ a
             for k, layer in enumerate(layers):
                 S = smatrices[k]
-                a_next = _solve(I2 - S.S22 @ R_down[k + 1], S.S21 @ a)
+                a_next = _solve(eye_minus(S.S22 @ R_down[k + 1]), S.S21 @ a)
                 b_next = R_down[k + 1] @ a_next
                 m = layer.modes
                 layer.c_plus = 0.5 * (m.A @ a + m.B @ b)
@@ -383,10 +413,10 @@ class NearFieldSolution:
         lam = m.lam[None, :]
         fwd = xp.exp(-lam * self.k0 * zl[:, None]) * layer.c_plus[None, :]
         bwd = xp.exp(-lam * self.k0 * (layer.thickness - zl)[:, None]) * layer.d_minus[None, :]
-        s = (fwd + bwd) @ m.W.T
-        u = (bwd - fwd) @ m.V.T
+        s = _times_transpose(fwd + bwd, m.W)
+        u = _times_transpose(bwd - fwd, m.V)
         sx, sy = s[:, :Nh], s[:, Nh:]
         ux, uy = u[:, :Nh], u[:, Nh:]
-        sz = (-1j * (self.Kx[None, :] * uy - self.Ky[None, :] * ux)) @ m.Einv.T
-        uz = (-1j * (self.Kx[None, :] * sy - self.Ky[None, :] * sx)) @ m.Uinv.T
+        sz = _times_transpose(-1j * (self.Kx[None, :] * uy - self.Ky[None, :] * ux), m.Einv)
+        uz = _times_transpose(-1j * (self.Kx[None, :] * sy - self.Ky[None, :] * sx), m.Uinv)
         return dict(sx=sx, sy=sy, sz=sz, ux=ux, uy=uy, uz=uz)

@@ -26,7 +26,7 @@ const project: Project = {
     cd_reference: "top",
   },
   illumination: { wavelength_nm: 13.5, theta_deg: 6, phi_deg: 0, polarization: "TE" },
-  numerics: { nx: 5, ny: 5, grid: 0 },
+  numerics: { nx: 5, ny: 5, grid: 0, centering: "pupil" },
 };
 
 const store = () => useProjectStore.getState();

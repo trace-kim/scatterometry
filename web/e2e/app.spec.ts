@@ -44,6 +44,18 @@ test("solves the default preset and renders every view without errors", async ({
   await expect(page.getByText("R total (TE)")).toBeVisible();
   await expect(page.locator(".ag-row").first()).toBeVisible();
 
+  // The Pupil card's camera mode projects the same orders onto a sensor.
+  const pupilCard = page.locator("section", { has: page.getByRole("group", { name: "Pupil view" }) });
+  await pupilCard.getByRole("button", { name: "Camera", exact: true }).click();
+  await expect(pupilCard.getByText(/orders on the sensor/)).toBeVisible();
+  await expect(pupilCard.getByRole("textbox", { name: "Camera distance" })).toBeVisible();
+  await expect(pupilCard.locator("canvas").first()).toBeVisible();
+  // The mode is remembered, and the chart must render before the pupil data arrives.
+  await page.reload();
+  await expect(pupilCard.getByText(/orders on the sensor/)).toBeVisible();
+  await pupilCard.getByRole("button", { name: "Pupil", exact: true }).click();
+  await expect(pupilCard.getByText(/color = phase/)).toBeVisible();
+
   await openTab(page, "Near field");
   await expect(page.getByText("Field cross-section")).toBeVisible();
   await expect(page.locator("section", { hasText: "Field cross-section" }).locator("canvas").first()).toBeVisible();
@@ -100,7 +112,8 @@ test("the setup panel keeps groups intact, warns, and explains what blocks a run
   await orders.fill("5");
   await orders.press("Enter");
   await expect(page.getByText("orders cut off")).toBeVisible();
-  await expect(page.getByText(/Use N ≥ 10\./)).toBeVisible();
+  // m = −8 … 10 at 6°: the pupil-centred window (centre m = 1) reaches them all with N = 9.
+  await expect(page.getByText(/Use N ≥ 9\./)).toBeVisible();
   await expect(runButton(page)).toBeEnabled();
 
   // An invalid layer blocks the run, and the footer says why.

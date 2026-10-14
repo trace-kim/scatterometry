@@ -81,6 +81,9 @@ class MaskPattern(Pattern2D):
     def host_fraction(self, X, Y, dx: float = 0.0, dy: float = 0.0):
         raise NotImplementedError
 
+    def uniform_eps(self):
+        return complex(self.eps_host) if self.eps_host == self.eps_fill else None
+
     def eps_r(self, X, Y):
         f = self.host_fraction(X, Y, *grid_pixel(X, Y, *self.cell))
         xp = _module_for(X)

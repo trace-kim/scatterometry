@@ -42,7 +42,7 @@ class RCWASolver:
         # ---- Step 0/1: problem already defined via RCWAProblem ----
 
         # ---- Build harmonic indexing (used throughout) ----
-        mx, my = _harmonic_indices(st.Nx, st.Ny)
+        mx, my = _harmonic_indices(st.Nx, st.Ny, st.shift_x, st.shift_y)
         Nh = mx.size
 
         # ---- Step 4: wave vector expansion ----

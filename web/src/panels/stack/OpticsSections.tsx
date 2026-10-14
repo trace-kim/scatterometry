@@ -4,7 +4,7 @@ import { isContactHoles, type Project } from "@/api/model";
 import { Note, Segmented, StackedField } from "@/components/controls";
 import { NumberField } from "@/components/number-field";
 import { fmt } from "@/lib/format";
-import { isPatterned, minimumOrders, propagatingOrders } from "@/lib/stack";
+import { isPatterned, minimumOrders, orderWindow, propagatingOrders } from "@/lib/stack";
 import { editProject, useProject } from "@/state/project";
 import { useStack } from "../common";
 import { SetupSection } from "./ui";
@@ -83,6 +83,12 @@ export function IlluminationSection({ problems }: { problems: number }) {
 }
 
 const signed = (v: number) => (v < 0 ? `−${-v}` : String(v));
+const span = ([lo, hi]: [number, number]) => `${signed(lo)} … ${signed(hi)}`;
+
+const CENTERING = {
+  pupil: "Orders are centred on the pupil (k_t = 0), so oblique and grazing incidence keep every propagating order.",
+  specular: "Orders −N…N around the specular order, as in most RCWA codes; grazing incidence needs about twice the N.",
+} as const;
 
 export function AccuracySection({ problems }: { problems: number }) {
   const project = useProject();
@@ -92,7 +98,8 @@ export function AccuracySection({ problems }: { problems: number }) {
   const patterned = isPatterned(project);
   const orders = propagatingOrders(project);
   const need = minimumOrders(project);
-  const set = (field: keyof Project["numerics"], value: number) =>
+  const window = orderWindow(project);
+  const set = (field: Exclude<keyof Project["numerics"], "centering">, value: number) =>
     editProject((d) => {
       d.numerics[field] = Math.max(0, Math.round(value));
     }, `numerics:${field}`);
@@ -104,16 +111,16 @@ export function AccuracySection({ problems }: { problems: number }) {
       ? `Nx ${num.nx}, Ny ${num.ny}, ${harmonics} harmonics`
       : `N = ${num.nx}, ${harmonics} harmonics`;
 
-  // Propagating orders outside −N…N would be missing from the result, power and all.
+  // Propagating orders outside the window would be missing from the result, power and all.
   const short = !!need && (num.nx < need.nx || (ch && num.ny < need.ny));
   let guide: string | null = null;
   if (orders && need) {
     const range =
       pattern.kind === "ls_v"
-        ? `m = ${signed(orders.m[0])} … ${signed(orders.m[1])}`
+        ? `m = ${span(orders.m)}`
         : pattern.kind === "ls_h"
-          ? `n = ${signed(orders.n[0])} … ${signed(orders.n[1])}`
-          : `|m| ≤ ${need.nx}, |n| ≤ ${need.ny}`;
+          ? `n = ${span(orders.n)}`
+          : `m = ${span(orders.m)}, n = ${span(orders.n)}`;
     const minimum = ch ? `Nx ≥ ${need.nx} and Ny ≥ ${need.ny}` : `N ≥ ${need.nx}`;
     guide = short
       ? `${orders.count} orders propagate (${range}), but the solver keeps fewer, so their power is lost. Use ${minimum}.`
@@ -131,7 +138,7 @@ export function AccuracySection({ problems }: { problems: number }) {
       <div className="grid grid-cols-3 gap-2">
         <StackedField
           label={ch ? "Orders Nx" : "Fourier orders N"}
-          hint="Harmonics −N…N along the periodic axis; more are more accurate and slower"
+          hint="Harmonics on each side of the window centre along the periodic axis; more are more accurate and slower"
         >
           <NumberField
             value={num.nx}
@@ -174,10 +181,32 @@ export function AccuracySection({ problems }: { problems: number }) {
       ) : (
         <>
           {guide && <Note tone={short ? "warn" : "muted"}>{guide}</Note>}
-          {summary && summary.harmonics > 1 && (
+          <StackedField label="Order window">
+            <Segmented
+              aria-label="Order window"
+              value={num.centering}
+              onChange={(centering) =>
+                editProject((d) => {
+                  d.numerics.centering = centering;
+                }, "numerics:centering")
+              }
+              options={[
+                { value: "pupil", label: "Pupil centre", hint: CENTERING.pupil },
+                { value: "specular", label: "Specular", hint: CENTERING.specular },
+              ]}
+            />
+            <Note className="ml-1">{CENTERING[num.centering]}</Note>
+          </StackedField>
+          {summary && summary.harmonics > 1 && window && (
             <Note>
-              The solver keeps orders −N…N: {summary.harmonics} harmonics, {summary.matrix_size} × {summary.matrix_size}{" "}
-              matrices, sampled on a {summary.grid[0]} × {summary.grid[1]} grid (grid samples 0 = automatic).
+              The solver keeps orders{" "}
+              {pattern.kind === "ls_h"
+                ? `n = ${span(window.n)}`
+                : ch
+                  ? `m = ${span(window.m)}, n = ${span(window.n)}`
+                  : `m = ${span(window.m)}`}
+              : {summary.harmonics} harmonics, {summary.matrix_size} × {summary.matrix_size} matrices, sampled on a{" "}
+              {summary.grid[0]} × {summary.grid[1]} grid (grid samples 0 = automatic).
             </Note>
           )}
         </>

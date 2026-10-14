@@ -14,6 +14,7 @@ import {
   moveBlock,
   moveLayer,
   newGroup,
+  orderWindow,
   problemSection,
   propagatingOrders,
   renameGroup,
@@ -64,7 +65,7 @@ const euv: Project = {
     cd_reference: "top",
   },
   illumination: { wavelength_nm: 13.5, theta_deg: 6, phi_deg: 0, polarization: "TE" },
-  numerics: { nx: 15, ny: 15, grid: 0 },
+  numerics: { nx: 15, ny: 15, grid: 0, centering: "pupil" },
 };
 
 const names = (p: Project) => p.layers.map((l) => `${l.name}${l.group ? `@${l.group}` : ""}`);
@@ -162,11 +163,41 @@ describe("setup helpers", () => {
     });
     expect(propagatingOrders(blank)).toBeNull();
 
-    // N must reach the farthest propagating order on each periodic axis.
-    expect(minimumOrders(euv)).toEqual({ nx: 10, ny: 0 });
+    // The pupil-centred window sits one order towards k_t = 0 at 6°, so N = 9 reaches m = -8 ... 10.
+    const nine = produce(euv, (d) => {
+      d.numerics.nx = 9;
+    });
+    expect(orderWindow(nine)?.m).toEqual([-8, 10]);
+    expect(minimumOrders(euv)).toEqual({ nx: 9, ny: 0 });
     expect(minimumOrders(horizontal)).toEqual({ nx: 9, ny: 0 });
-    expect(minimumOrders(holes)).toEqual({ nx: 10, ny: 9 });
+    expect(minimumOrders(holes)).toEqual({ nx: 9, ny: 9 });
     expect(minimumOrders(blank)).toBeNull();
+    // The classic window −N…N around the specular order must reach the farthest order.
+    const classic = produce(euv, (d) => {
+      d.numerics.centering = "specular";
+    });
+    expect(orderWindow(classic)?.m).toEqual([-15, 15]);
+    expect(minimumOrders(classic)).toEqual({ nx: 10, ny: 0 });
+  });
+
+  it("centres the window on the pupil at grazing incidence", () => {
+    // 85°: the orders m = 0 ... 18 all lie on one side of the specular order.
+    const grazing = produce(euv, (d) => {
+      d.pattern.kind = "ch_square";
+      d.illumination.theta_deg = 85;
+    });
+    expect(propagatingOrders(grazing)).toMatchObject({ m: [0, 18], n: [-9, 9], count: 279 });
+    expect(orderWindow(grazing)).toEqual({ m: [-6, 24], n: [-15, 15] });
+    expect(minimumOrders(grazing)).toEqual({ nx: 9, ny: 9 });
+    const classic = produce(grazing, (d) => {
+      d.numerics.centering = "specular";
+    });
+    expect(minimumOrders(classic)).toEqual({ nx: 18, ny: 9 });
+    // Too few harmonics to reach the pupil centre: the window stops at the specular order.
+    const few = produce(grazing, (d) => {
+      d.numerics.nx = 4;
+    });
+    expect(orderWindow(few)?.m).toEqual([0, 8]);
   });
 
   it("maps every validation message to its setup section", () => {

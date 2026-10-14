@@ -2209,6 +2209,15 @@
             "type": "integer",
             "title": "Grid",
             "default": 0
+          },
+          "centering": {
+            "type": "string",
+            "enum": [
+              "pupil",
+              "specular"
+            ],
+            "title": "Centering",
+            "default": "pupil"
           }
         },
         "additionalProperties": false,

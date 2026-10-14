@@ -5,6 +5,7 @@ solver). Layers are listed from the incident side downward.
 """
 from __future__ import annotations
 
+import cmath
 import math
 from dataclasses import dataclass, replace
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
@@ -18,6 +19,8 @@ from rcwa import (
     RCWASettings,
     nk_to_eps,
 )
+
+from rcwa.convolution import pupil_centre_shift
 
 from .geometry import HoleArrayPattern, LineSpacePattern, MaskPattern, UniformPattern
 
@@ -94,9 +97,12 @@ class Illumination:
 
 @dataclass(frozen=True)
 class Numerics:
-    nx: int = 15  # harmonics -nx..nx (L/S uses nx along its periodic axis)
+    nx: int = 15  # harmonics on each side of the window centre (L/S uses nx along its periodic axis)
     ny: int = 15
     grid: int = 0  # real-space samples per periodic axis; 0 = automatic
+    # "pupil": centre the order window on k_t = 0, so oblique incidence keeps every
+    # propagating order; "specular": the classic -N..N around the specular order.
+    centering: str = "pupil"
 
 
 @dataclass(frozen=True)
@@ -207,6 +213,26 @@ def slice_counts(spec: MaskSpec) -> Tuple[int, int]:
     return total, cut
 
 
+def dense_slice_count(spec: MaskSpec) -> int:
+    """Slices from the top through the lowest patterned one, without expanding the stack.
+
+    NearFieldSolver keeps a dense matrix for each of these interfaces; homogeneous slices
+    below the last patterned one stay O(Nh).
+    """
+    if spec.pattern.kind == "none":
+        return 0
+    position = lowest = 0
+    for block, count in _layer_blocks(spec):
+        steps = [_steps(layer, True) for layer in block]
+        offset = 0
+        for layer, n in zip(block, steps, strict=True):
+            offset += n
+            if layer.patterned:
+                lowest = position + (count - 1) * sum(steps) + offset
+        position += count * sum(steps)
+    return lowest
+
+
 def _make_pattern(pat: PatternSpec, eps_host: complex, eps_fill: complex, cd_x: float, cd_y: float) -> MaskPattern:
     if pat.kind == "ls_v":
         return LineSpacePattern(pat.pitch_x, cd_x, eps_host, eps_fill, axis="x")
@@ -291,7 +317,17 @@ def solver_settings(spec: MaskSpec, slices: Optional[Sequence[Slice]] = None) ->
     def samples(n: int) -> int:
         return 1 if n == 0 else max(base, 4 * n + 1)
 
-    return Lattice(Lx=Lx, Ly=Ly), RCWASettings(Nx=nx, Ny=ny, grid_Nx=samples(nx), grid_Ny=samples(ny))
+    shift_x = shift_y = 0
+    if num.centering == "pupil" and (nx or ny):
+        ill = spec.illumination
+        n_inc = cmath.sqrt(spec.material(spec.superstrate).eps).real
+        sin_t = n_inc * math.sin(math.radians(ill.theta_deg))
+        kx = sin_t * math.cos(math.radians(ill.phi_deg))
+        ky = sin_t * math.sin(math.radians(ill.phi_deg))
+        shift_x = pupil_centre_shift(kx, ill.wavelength / Lx, nx)
+        shift_y = pupil_centre_shift(ky, ill.wavelength / Ly, ny)
+    return Lattice(Lx=Lx, Ly=Ly), RCWASettings(Nx=nx, Ny=ny, grid_Nx=samples(nx), grid_Ny=samples(ny),
+                                               shift_x=shift_x, shift_y=shift_y)
 
 
 def build_problem(spec: MaskSpec, polarization: Optional[str] = None,
@@ -347,6 +383,8 @@ def validate(spec: MaskSpec) -> List[str]:
     if len(spec.materials) > MAX_MATERIALS:
         errors.append(f"At most {MAX_MATERIALS} materials are supported.")
     num = spec.numerics
+    if num.centering not in ("pupil", "specular"):
+        errors.append(f"Unknown order centering '{num.centering}'; use 'pupil' or 'specular'.")
     if num.nx < 0 or num.ny < 0:
         errors.append("Harmonic orders must be non-negative.")
     if num.grid < 0:

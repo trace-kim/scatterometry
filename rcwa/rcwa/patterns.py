@@ -14,10 +14,20 @@ class Pattern2D:
     def eps_r(self, X, Y):
         raise NotImplementedError
 
+    def uniform_eps(self):
+        """The permittivity if the pattern is homogeneous, else None.
+
+        NearFieldSolver gives homogeneous layers analytic modes and O(Nh) S-matrices.
+        """
+        return None
+
 
 class HomogeneousPattern(Pattern2D):
     def __init__(self, eps_r: complex):
         self._eps = complex(eps_r)
+
+    def uniform_eps(self):
+        return self._eps
 
     def eps_r(self, X, Y):
         xp = get_array_module()

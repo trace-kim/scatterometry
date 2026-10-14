@@ -80,7 +80,8 @@ def test_dielectric_views(client, lines_project):
     assert not np.allclose(exact, fourier)  # Gibbs ringing of the truncated series
 
     conv = load_npz(client.post("/api/dielectric/convolution", json={"project": project, "slice": 0}))
-    assert conv["matrix"].shape == (9, 9) and list(conv["mx"]) == list(range(-4, 5))
+    # At 6 deg the pupil-centred window sits one order towards k_t = 0.
+    assert conv["matrix"].shape == (9, 9) and list(conv["mx"]) == list(range(-3, 6))
 
 
 def test_invalid_projects_are_rejected_by_view_endpoints(client):

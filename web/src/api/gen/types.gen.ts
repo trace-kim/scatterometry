@@ -390,6 +390,10 @@ export type NumericsDoc = {
      * Grid
      */
     grid?: number;
+    /**
+     * Centering
+     */
+    centering?: 'pupil' | 'specular';
 };
 
 /**

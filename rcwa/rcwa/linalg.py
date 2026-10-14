@@ -4,10 +4,15 @@ Linear algebra helper functions for RCWA.
 from __future__ import annotations
 
 from .backend import get_array_module
+from .blockdiag import DiagBlocks
 
 
 def _solve(A, B):
-    """Solve A X = B (prefer solve over explicit inverse)."""
+    """Solve A X = B (prefer solve over explicit inverse). A or B may be DiagBlocks."""
+    if isinstance(A, DiagBlocks):
+        return A.solve(B)
+    if isinstance(B, DiagBlocks):
+        B = B.to_dense()
     xp = get_array_module()
     return xp.linalg.solve(A, B)
 

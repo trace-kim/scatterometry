@@ -13,7 +13,16 @@ import numpy as np
 
 from rcwa import NearFieldSolution, NearFieldSolver, RCWASolver
 
-from .stack import MaskSpec, Slice, build_problem, build_slices, slice_counts, solver_settings, with_parameter
+from .stack import (
+    MaskSpec,
+    Slice,
+    build_problem,
+    build_slices,
+    dense_slice_count,
+    slice_counts,
+    solver_settings,
+    with_parameter,
+)
 
 ProgressFn = Callable[[float, str], None]
 
@@ -25,20 +34,19 @@ def _noop(fraction: float, message: str) -> None:
 def memory_estimate(spec: MaskSpec) -> int:
     """Approximate peak memory of solve_spec(spec) in bytes, for a valid spec.
 
-    NearFieldSolver keeps one 2Nh x 2Nh complex matrix per slice interface during the
-    cascade, plus about a dozen per distinct layer (modes, S-matrix, temporaries). An
-    earlier polarization's modes stay alive while the next one solves.
+    NearFieldSolver keeps one 2Nh x 2Nh complex matrix per interface from the top through
+    the lowest patterned slice, plus about a dozen per patterned slice (modes, S-matrix,
+    temporaries). Homogeneous slices are O(Nh) (DiagBlocks). An earlier polarization's
+    modes stay alive while the next one solves.
 
-    On the presets and variants up to 1 GB, the estimate was within 3-7% of the
-    tracemalloc peak whenever the matrices dominated (solves above a few MB).
+    On euv-lines and euv-contacts with two polarizations, from 11 MB to 350 MB, the
+    estimate was within 2-6% of the tracemalloc peak.
     """
     _, settings = solver_settings(spec)
     harmonics = (2 * settings.Nx + 1) * (2 * settings.Ny + 1)
-    total, cut = slice_counts(spec)
-    pattern_on = spec.pattern.kind != "none"
-    uniform = {layer.material for layer in spec.layers if not (pattern_on and layer.patterned)}
-    per_distinct = 12 + 5 * (len(spec.polarizations()) - 1)
-    return 16 * (2 * harmonics) ** 2 * (total + per_distinct * (cut + len(uniform)) + 8)
+    _, cut = slice_counts(spec)
+    per_patterned = 12 + 5 * (len(spec.polarizations()) - 1)
+    return 16 * (2 * harmonics) ** 2 * (dense_slice_count(spec) + per_patterned * cut + 8)
 
 
 @dataclass

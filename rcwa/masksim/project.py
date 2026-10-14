@@ -66,6 +66,7 @@ class NumericsDoc(_Doc):
     nx: int = 15
     ny: int = 15
     grid: int = 0
+    centering: Literal["pupil", "specular"] = "pupil"
 
 
 class Project(_Doc):
@@ -99,7 +100,7 @@ class Project(_Doc):
             ),
             illumination=Illumination(wavelength=ill.wavelength_nm * NM, theta_deg=ill.theta_deg,
                                       phi_deg=ill.phi_deg, polarization=ill.polarization),
-            numerics=Numerics(nx=num.nx, ny=num.ny, grid=num.grid),
+            numerics=Numerics(nx=num.nx, ny=num.ny, grid=num.grid, centering=num.centering),
         )
 
     @classmethod
@@ -122,7 +123,7 @@ class Project(_Doc):
             ),
             illumination=IlluminationDoc(wavelength_nm=_nm(ill.wavelength), theta_deg=ill.theta_deg,
                                          phi_deg=ill.phi_deg, polarization=ill.polarization),
-            numerics=NumericsDoc(nx=num.nx, ny=num.ny, grid=num.grid),
+            numerics=NumericsDoc(nx=num.nx, ny=num.ny, grid=num.grid, centering=num.centering),
         )
 
     def digest(self) -> str:

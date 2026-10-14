@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Tuple
 
 from .backend import get_array_module
+from .blockdiag import DiagBlocks, identity_like
 from .linalg import _solve, _diag, _outgoing_sqrt
 from .smatrix import SMatrix
 
@@ -158,14 +159,15 @@ def _layer_scattering_matrix_with_lam(
     k0: float,
     thickness: float,
 ) -> SMatrix:
+    """Step 7(c). With all-DiagBlocks inputs (a homogeneous layer) every product is O(Nh)."""
     xp = get_array_module()
-    Nh2 = W_i.shape[0]
-    I2 = xp.eye(Nh2, dtype=xp.complex128)
+    I2 = identity_like(W_i, V_i, W0, V0)
 
     A0 = _solve(W_i, W0) + _solve(V_i, V0)
     B0 = _solve(W_i, W0) - _solve(V_i, V0)
 
-    Xi = xp.diag(xp.exp(-lam * k0 * thickness))
+    phase = xp.exp(-lam * k0 * thickness)
+    Xi = DiagBlocks.diagonal(phase) if isinstance(I2, DiagBlocks) else xp.diag(phase)
 
     # Common subexpressions using solves (avoid inv)
     A0_inv = _solve(A0, I2)

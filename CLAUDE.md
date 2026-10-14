@@ -92,7 +92,8 @@ python analyze_scatterometry.py                      # configured only by scatte
 
 - **The layer eigenproblem exists twice.** `RCWASolver` inlines it in `solver.py`, while `NearFieldSolver` calls `eigenmodes._layer_eigenmodes`, which returns `(W, V, lam)`. Change both; the cross-solver tests catch divergence. `eigenmodes._layer_scattering_matrix` (without `_with_lam`) is a stub that raises.
 - **Laurent's rule only.** `_build_convolution_matrices_for_layer` also returns `E_inv_conv` (`[1/ε]`), but both solvers discard it and invert `E_conv`.
-- **Harmonic flattening** (`_harmonic_indices`): `mx` varies fastest, so `p = (n+Ny)(2Nx+1) + (m+Nx)`. Transverse vectors have length `2*Nh`, stacked `[x-block; y-block]`.
+- **Harmonic flattening** (`_harmonic_indices`): `mx` varies fastest. Transverse vectors have length `2*Nh`, stacked `[x-block; y-block]`.
+- **Order window.** Orders run `shift-N … shift+N` per axis (`RCWASettings.shift_x/shift_y`, default 0; `|shift| ≤ N` keeps the specular order). masksim's `Numerics.centering="pupil"` (the default) sets the shift with `pupil_centre_shift`, the order nearest k_t = 0, so grazing incidence keeps every propagating order. The convolution matrices index by order differences, so any window works. `web/src/lib/stack.ts` (`orderWindow`, `minimumOrders`) mirrors the rule, including round-half-up; change both together.
 - **Units.** Wave vectors are normalized by `k0`. Lengths enter only through `k0·thickness` and `λ/Λ`, so any consistent unit works; the code uses meters.
 - **Layer order.** `layers[0]` touches the reflection (incident) region and `layers[-1]` the transmission region. Global S = `Sref ⋆ Sdev ⋆ Strn`, and the zero-thickness gap medium is vacuum.
 - **Periodicity.** `Ny = 0` means a 1D grating (`gy` forced to 0, `Ly` ignored). `Nx = 0, Ny > 0` works for y-periodic patterns. The real-space grid needs `grid_N ≥ 4N + 1` per axis.
@@ -103,6 +104,7 @@ python analyze_scatterometry.py                      # configured only by scatte
 
 ### NearFieldSolver (`nearfield.py`)
 
+- **Homogeneous fast path.** Layers whose `pattern.uniform_eps()` is not None, the gap and the external regions get analytic modes stored as `blockdiag.DiagBlocks` (2×2 blocks of diagonals, `(Nh, 2, 2)`). Their S-matrices and star products are O(Nh); `_redheffer_star` and `_solve` dispatch on the type and densify mixed cases. Only patterned slices pay O(Nh³), which made the 80-slice Mo/Si stack about 8× faster. `RCWASolver` stays all-dense as the independent reference.
 - It takes the same `RCWAProblem` and returns the same `result` dict. Equal `Layer`s share one eigen-solve and one S-matrix, so a 40-pair multilayer costs two eigen-solves.
 - **Progress and cancellation.** `solve(..., progress=fn)` reports `fn(fraction, message)` after each distinct eigen-solve and at the cascade and field stages. The callback may raise to abort; maskserver cancels jobs this way.
 - **Field reconstruction.** A bottom-up cascade keeps `R_down[k]`. A top-down pass then gives each layer's `c⁺` (at its top) and `d⁻` (at its bottom), so every `exp(−λk₀ζ)` stays bounded.
@@ -151,7 +153,7 @@ python analyze_scatterometry.py                      # configured only by scatte
   - Finished runs are dropped oldest-first once their solutions exceed `MASKSIM_MAX_RESULTS_GB` (default 4), measured array by array. The newest result always stays.
   - At most `MASKSIM_REQUEST_THREADS` (default 8) requests compute at once, which caps the memory of concurrent views.
   - Run views evaluate depths in chunks (`views.DEPTH_CHUNK`) unless the amplitude grid fits the job cache, so their memory doesn't grow with n_z × harmonics.
-  - Keep the solver's memory model in `memory_estimate` in sync with `NearFieldSolver`, which holds one 2Nh×2Nh matrix per slice interface during the cascade.
+  - Keep the solver's memory model in `memory_estimate` in sync with `NearFieldSolver`. It holds a dense 2Nh×2Nh matrix per interface only from the top through the lowest patterned slice (`stack.dense_slice_count`); homogeneous slices below it are O(Nh).
 - **Arrays.** Array endpoints return uncompressed `.npz`: complex64 fields, uint8 material indices, and float64 axes in nm. GZip skips them, because float data barely compresses and gzip cost 50–150 ms per field plane. JSON responses are gzipped.
 - **Live events.** `GET /api/events` (SSE) emits `snapshot`, `job` (≤10 per second while running), and `sweep-records`.
 - **API models** live in `schemas.py`; all lengths are in nm.
@@ -176,6 +178,7 @@ python analyze_scatterometry.py                      # configured only by scatte
     - repeat-group blocks (mirroring `masksim.stack._layer_blocks`), and layer moves that step over whole groups instead of splitting them
     - propagating orders, in the solver's sign convention, and the minimum N that keeps them
     - `problemSection`, which maps `masksim.stack.validate()` messages to sections by their wording. Add a case and a test there when adding or rewording a message.
+- **Pupil card modes.** "Pupil" plots direction cosines, where the orders form a lattice. "Camera" (`panels/PupilCamera.tsx`, math in `lib/camera.ts`) is the same orthographic projection taken along the camera axis, in the pupil's frame rotated by the minimal rotation from z (identical to the pupil at θ = 0), so scale, orientation and style match; at grazing incidence the lattice columns become arcs. The flat sensor (distance, size, aim) appears as its exact footprint, and on-sensor tests use the gnomonic projection. Both modes share `panels/orderMap.ts`. ECharts needs axes even before data arrives, or it throws and blanks the app.
 - **Data flow.**
   - Project store edits produce TanStack Query keys from `physicsKey(project)`; geometry and ε refetch as you type.
   - Results are keyed by run id and never refetched.

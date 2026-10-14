@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Polarization } from "@/api/model";
+import type { CameraGeometry } from "@/lib/camera";
 import type { Scale } from "@/lib/colorize";
 import type { ColormapName } from "@/lib/colormaps";
 import type { FieldQuantity } from "@/lib/field";
@@ -17,6 +18,13 @@ export interface SectionView {
   zMax: number | null;
 }
 
+export interface CameraSettings extends CameraGeometry {
+  /** Point the camera at the specular order, or at theta_deg / phi_deg. */
+  aim: "specular" | "manual";
+  /** Window: every order in front of the camera, or just the sensor. */
+  zoom: "all" | "sensor";
+}
+
 export interface ViewState {
   /** Expanded sections of the setup panel (missing ids use SETUP_OPEN). */
   setup: { open: Partial<Record<SetupSectionId, boolean>> };
@@ -28,7 +36,16 @@ export interface ViewState {
     colormap: ColormapName;
     slice: number | null;
   };
-  diffraction: { log: boolean; na: number; reduction: number; pol: Polarization | null; pupilZoom: "full" | "na" };
+  diffraction: {
+    log: boolean;
+    na: number;
+    reduction: number;
+    pol: Polarization | null;
+    pupilZoom: "full" | "na";
+    /** The Pupil card shows direction cosines, or the orders on a flat camera sensor. */
+    pupilMode: "pupil" | "camera";
+    camera: CameraSettings;
+  };
   nearfield: {
     section: SectionView;
     pol: Polarization | null;
@@ -58,7 +75,23 @@ const DEFAULTS: ViewState = {
   setup: { open: {} },
   geometry: { section: section(), slice: null, show3d: true, cut: 1, periods3d: 2 },
   dielectric: { section: section(), part: "re", fourier: true, colormap: "viridis", slice: null },
-  diffraction: { log: true, na: 0.33, reduction: 4, pol: null, pupilZoom: "full" },
+  diffraction: {
+    log: true,
+    na: 0.33,
+    reduction: 4,
+    pol: null,
+    pupilZoom: "full",
+    pupilMode: "pupil",
+    camera: {
+      distance_mm: 100,
+      width_mm: 27.6,
+      height_mm: 27.6,
+      aim: "specular",
+      theta_deg: 85,
+      phi_deg: 0,
+      zoom: "all",
+    },
+  },
   nearfield: {
     section: section(),
     pol: null,

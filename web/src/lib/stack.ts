@@ -192,23 +192,43 @@ export interface PropagatingOrders {
   count: number;
 }
 
-/**
- * Reflected orders that propagate: |k_t| < n_inc with k_t = k_inc,t − (m λ/Lx, n λ/Ly),
- * the solver's convention. Null for an unpatterned stack (only the specular order exists).
- */
-export function propagatingOrders(project: Project): PropagatingOrders | null {
+interface Incidence {
+  nInc: number;
+  /** Incident transverse wave vector over k0. */
+  kx0: number;
+  ky0: number;
+  /** Order spacing λ/L per periodic axis; 0 along an axis that is not periodic. */
+  gx: number;
+  gy: number;
+}
+
+function incidence(project: Project): Incidence | null {
   if (!isPatterned(project)) return null;
   const { pattern: p, illumination: ill } = project;
   const nInc = project.materials.find((m) => m.name === project.superstrate)?.n ?? Number.NaN;
   const [Lx, Ly] = unitCell(p);
   if (!(ill.wavelength_nm > 0 && nInc > 0 && Lx > 0 && Ly > 0)) return null;
   const sin = nInc * Math.sin((ill.theta_deg * Math.PI) / 180);
-  const kx0 = sin * Math.cos((ill.phi_deg * Math.PI) / 180);
-  const ky0 = sin * Math.sin((ill.phi_deg * Math.PI) / 180);
-  const gx = p.kind === "ls_h" ? 0 : ill.wavelength_nm / Lx;
-  const gy = p.kind === "ls_v" ? 0 : ill.wavelength_nm / Ly;
+  return {
+    nInc,
+    kx0: sin * Math.cos((ill.phi_deg * Math.PI) / 180),
+    ky0: sin * Math.sin((ill.phi_deg * Math.PI) / 180),
+    gx: p.kind === "ls_h" ? 0 : ill.wavelength_nm / Lx,
+    gy: p.kind === "ls_v" ? 0 : ill.wavelength_nm / Ly,
+  };
+}
+
+/**
+ * Reflected orders that propagate: |k_t| < n_inc with k_t = k_inc,t − (m λ/Lx, n λ/Ly),
+ * the solver's convention. Null for an unpatterned stack (only the specular order exists).
+ */
+export function propagatingOrders(project: Project): PropagatingOrders | null {
+  const inc = incidence(project);
+  if (!inc) return null;
+  const { nInc, kx0, ky0, gx, gy } = inc;
   const range = (k0: number, g: number): [number, number] =>
-    g === 0 ? [0, 0] : [Math.ceil((k0 - nInc) / g), Math.floor((k0 + nInc) / g)];
+    // + 0 turns Math.ceil's −0 (from a small negative) into 0.
+    g === 0 ? [0, 0] : [Math.ceil((k0 - nInc) / g) + 0, Math.floor((k0 + nInc) / g) + 0];
   const [m0, m1] = range(kx0, gx);
   const [n0, n1] = range(ky0, gy);
   const limit = nInc * nInc * (1 - 1e-12);
@@ -231,17 +251,49 @@ export function propagatingOrders(project: Project): PropagatingOrders | null {
 }
 
 /**
- * Smallest numerics.nx / numerics.ny that keep every propagating order (the solver uses nx
- * along y for horizontal lines). Null for an unpatterned stack.
+ * Centre of the solver's order window on one axis, mirroring rcwa.convolution.pupil_centre_shift:
+ * the order nearest k_t = 0 for "pupil" centering, kept within ±N so the specular order stays in.
+ */
+function windowCentre(k0: number, g: number, N: number, centering: Project["numerics"]["centering"]): number {
+  if (centering !== "pupil" || N === 0 || g === 0) return 0;
+  return Math.max(-N, Math.min(N, Math.floor(k0 / g + 0.5)));
+}
+
+/** Orders the solver keeps along x (m) and y (n) for N harmonics per side of the window centre. */
+export function orderWindow(project: Project): { m: [number, number]; n: [number, number] } | null {
+  const inc = incidence(project);
+  if (!inc) return null;
+  const { nx, ny, centering } = project.numerics;
+  const kind = project.pattern.kind;
+  const [Nx, Ny] = kind === "ls_v" ? [nx, 0] : kind === "ls_h" ? [0, nx] : [nx, ny];
+  const axis = (k0: number, g: number, N: number): [number, number] => {
+    const c = windowCentre(k0, g, N, centering);
+    return [c - N, c + N];
+  };
+  return { m: axis(inc.kx0, inc.gx, Nx), n: axis(inc.ky0, inc.gy, Ny) };
+}
+
+/**
+ * Smallest numerics.nx / numerics.ny whose window keeps every propagating order (the solver
+ * uses nx along y for horizontal lines). Null for an unpatterned stack.
  */
 export function minimumOrders(project: Project): { nx: number; ny: number } | null {
   const orders = propagatingOrders(project);
-  if (!orders) return null;
-  const reach = ([lo, hi]: [number, number]) => Math.max(Math.abs(lo), Math.abs(hi));
+  const inc = incidence(project);
+  if (!orders || !inc) return null;
+  const centering = project.numerics.centering;
+  const need = ([lo, hi]: [number, number], k0: number, g: number) => {
+    for (let N = 0; ; N++) {
+      const c = windowCentre(k0, g, N, centering);
+      if (c - N <= lo && hi <= c + N) return N;
+    }
+  };
+  const nx = need(orders.m, inc.kx0, inc.gx);
+  const ny = need(orders.n, inc.ky0, inc.gy);
   const kind = project.pattern.kind;
-  if (kind === "ls_v") return { nx: reach(orders.m), ny: 0 };
-  if (kind === "ls_h") return { nx: reach(orders.n), ny: 0 };
-  return { nx: reach(orders.m), ny: reach(orders.n) };
+  if (kind === "ls_v") return { nx, ny: 0 };
+  if (kind === "ls_h") return { nx: ny, ny: 0 };
+  return { nx, ny };
 }
 
 // ---- validation messages ---------------------------------------------------------------

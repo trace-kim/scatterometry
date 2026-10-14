@@ -26,6 +26,10 @@ def _cases():
             pattern=replace(contacts.pattern, kind="ch_staggered", hole_shape="ellipse"),
             illumination=replace(contacts.illumination, phi_deg=20.0, polarization="TM"),
         ),
+        "euv-holes-grazing": replace(
+            contacts, numerics=Numerics(nx=3, ny=3),
+            illumination=replace(contacts.illumination, theta_deg=85.0, polarization="TE"),
+        ),
         "euv-blank": euv_blank(),
         "duv-attpsm": replace(duv_attpsm_lines(), numerics=Numerics(nx=8, ny=0)),
     }
